@@ -17,16 +17,16 @@ let betPrice = 0;
 let timeLeftH = 250;
 let timeLeftL = 50;
 let timeLeft = undefined;
-let diff = 1;
+let diff = 5;
 let betCost = 50;
 let debt = 'no';
 let debtTimer = undefined;
-let inL = 20;
-let inH = 50;
+let inL = 5;
+let inH = 20;
 let stocks = 0;
 let cpr = 0;
-let tH = 2.2;
-let tL = 1.8
+let tH = 2.1;
+let tL = 1.9
 
 const down = {
   x: 900,
