@@ -31,47 +31,47 @@ let tL = 1.9
 const down = {
   x: 900,
   y: 350,
-  width: 50,
+  width: 20,
   height: 50,
   color: 'red',
 };
 
 const up = {
-  x: 980,
+  x: 940,
   y: 350,
-  width: 50,
+  width: 20,
   height: 50,
   color: 'green',
 };
 
 const Bet = {
-  x: 1060,
+  x: 980,
   y: 350,
-  width: 50,
+  width: 20,
   height: 50,
   color: 'grey',
 };
 
 const withdrawl = {
-  x: 900,
-  y: 200,
-  width: 50,
+  x: 1020,
+  y: 350,
+  width: 20,
   height: 50,
   color: 'white',
 };
 
 const buy = {
-  x: 980,
+  x: 900,
   y: 200,
-  width: 50,
+  width: 100,
   height: 50,
   color: 'yellow',
 };
 
 const sell = {
-  x: 1060,
+  x: 1020,
   y: 200,
-  width: 50,
+  width: 100,
   height: 50,
   color: 'orange',
 };
@@ -365,7 +365,7 @@ function draw() {
 
   ctx.fillStyle = buy.color;
   ctx.fillRect(buy.x, buy.y, buy.width, buy.height);
-
+  
   ctx.fillStyle = sell.color;
   ctx.fillRect(sell.x, sell.y, sell.width, sell.height);
   
