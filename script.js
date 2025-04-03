@@ -599,13 +599,13 @@ function update() {
     popup();
     pickup();
     stamina();
-    //drawEntities();
+    drawEntities();
     drawItem();
 
 
     //drawMinimap();
 
-    //playerKill();
+    playerKill();
 
     if (!player.dead && !player.won) {
         window.requestAnimationFrame(update);
