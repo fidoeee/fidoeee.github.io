@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>raycaster</title>
+    <link href="style.css" rel="stylesheet" type="text/css" />
+    <style>
+        @keyframes background {
+            from {
+                transform: scale(1);
+                transform-origin: center;
+            }
+
+            to {
+                transform: scale(1.5);
+                transform-origin: center;
+            }
+        }
+
+        #startButton {
+            position: fixed;
+            top: 49%;
+            left: 42.6%;
+            width: 190px;
+            border: none;
+            background: none;
+            color: white;
+            padding: 5px 5px;
+            font-family: monospace;
+            font-size: 27px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            z-index: 7;
+        }
+
+        #credits {
+            position: fixed;
+            top: 92%;
+            left: 0%;
+            width: 190px;
+            border: none;
+            background: none;
+            color: white;
+            padding: 5px 5px;
+            font-family: monospace;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0);
+            transition: all 0.3s ease;
+            z-index: 7;
+        }
+
+        #back {
+            position: fixed;
+            display: none;
+            top: 92%;
+            left: 0%;
+            width: 190px;
+            border: none;
+            background: none;
+            color: white;
+            padding: 5px 5px;
+            font-family: monospace;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0);
+            transition: all 0.3s ease;
+            z-index: 7;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(1.2);
+        }
+
+        button:active {
+            transform: scale(0.95);
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 8px rgba(255, 255, 255, 0.5);
+        }
+
+        .difficulty {
+            position: fixed;
+            left: 43.2%;
+            width: 170px;
+            border: none;
+            background: none;
+            color: white;
+            padding: 5px 5px;
+            font-family: monospace;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            z-index: 7;
+        }
+
+        #peaceful {
+            top: 68%;
+        }
+
+        #easy {
+            top: 73%;
+        }
+
+        #medium {
+            top: 78%;
+        }
+
+        #hard {
+            top: 83%;
+        }
+
+        #ultrahard {
+            top: 88%;
+        }
+
+        #creditText {
+            display: none;
+            position: fixed;
+            text-align: center;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            z-index: 8;
+            font-family: monospace;
+            font-size: 25px;
+        }
+
+        #creditTitle {
+            display: none;
+            position: fixed;
+            text-align: center;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            z-index: 8;
+            font-family: monospace;
+            font-size: 45px;
+        }
+
+        #codes {
+            position: fixed;
+            top: 0px;
+            left: 0px;
+            background: transparent;
+            border: none; 
+            color: transparent; 
+            caret-color: black;
+        }
+        #codeSlider {
+            position: fixed;
+            top: 20px;
+            left: 0px;
+            visibility: hidden;
+        }
+        #color {
+            position: fixed;
+            top: 40px;
+            left: 0px;
+            visibility: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="startScreen" width='100%' height='100%'
+        style='position: fixed; top: 0px; left: 0px; display: block; background-color: white; z-index: 6;'>
+        <img id="bg" src="title.png" alt="In game screenshot"
+            style='position: fixed; top: 0px; left: 0px; height: 100%; width: 100%; animation: background 20s ease-in-out 0s infinite alternate;'>
+        <div id="title">
+            <h1 style='position: fixed; top: 0px; left: 430px; text-align: center; font-size: 100px; color: white;'>
+                Raymaze
+            </h1>
+            <h1 style='position: fixed; top: 215px; left: 510px; text-align: center; font-size: 20; color: white;'>a
+                raycasted maze</h1>
+            <h1
+                style='position: fixed; top: 59%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 20; color: white;'>
+                ↓ Set Difficulty ↓</h1>
+            <button id='startButton'>Start game ></button>
+            <button id='peaceful' class='difficulty'>Peaceful ></button>
+            <button id='easy' class='difficulty'>Easy ></button>
+            <button id='medium' class='difficulty'>Medium ></button>
+            <button id='hard' class='difficulty'>Hard ></button>
+            <button id='ultrahard' class='difficulty'>Ultra Hard ></button>
+        </div>
+        <button id='credits'>Credits</button>
+        <button id='back'>Back</button>
+        <h2 id="creditText">fidoeeee<br>peFaniscool<br>kufbsrieEwz<br>ChatGPT<br>DeepSeek<br>Stack
+            Overflow<br>scottsmitelli</h2>
+        <h1 id="creditTitle">Credits:</h1>
+        <input type="text" id="codes"></input>
+        <input type="range" id="codeSlider"></input>
+        <input type="color" id="color"></input>
+    </div>
+    <canvas id="game" width='1200' height='600' style='position: fixed; top: 0px; left: 0px; display: block;'></canvas>
+    <canvas id="js" width='1200' height='600' style='position: fixed; top: 0px; left: 0px; display: none; z-index: 6'></canvas>
+    <canvas id="detection" width='1200' height='600'
+        style='position: fixed; top: 0px; left: 0px; display: none;'></canvas>
+    <canvas id="items" width='1200' height='600' style='position: fixed; top: 0px; left: 0px;'></canvas>
+    <canvas id="minimap" width='250' height='250'
+        style='position: fixed; top: 0px; left: 0px; background-color: black; display: none;'></canvas>
+    <canvas id="popup" width='1200' height='600' style='position: fixed; top: 0px; left: 0px; z-index: 4'></canvas>
+    <div id="crosshair"
+        style='position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; color: #fdfdfd; z-index: 5;'>
+        +</div>
+    <script src='define.js'></script>
+    <script src='map.js'></script>
+    <script src='expand.js'></script>
+    <script src="render.js"></script>
+    <script src="mobs.js"></script>
+    <script src='start.js'></script>
+    <script src='script.js'></script>
+</body>
+
+</html>
