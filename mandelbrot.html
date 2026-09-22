@@ -20,13 +20,8 @@
 <script>
 let c = document.getElementById("canvas");
 let ctx = c.getContext("2d");
-let width = window.innerWidth;
-let height = window.innerHeight;
-let dpr = window.devicePixelRatio;
-c.width = Math.floor(width * dpr);
-c.height = Math.floor(height * dpr);
-c.style.width = width + "px";
-c.style.height = height + "px";
+c.width = Math.floor(window.innerWidth*devicePixelRatio);
+c.height = Math.floor(window.innerHeight*devicePixelRatio);
 let rangeY = rangeX * (height / width);
 let imageData = ctx.createImageData(c.width, c.height);
 let data = imageData.data;
