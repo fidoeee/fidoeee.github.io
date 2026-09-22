@@ -22,6 +22,8 @@ let c = document.getElementById("canvas");
 let ctx = c.getContext("2d");
 c.width = Math.floor(window.innerWidth*devicePixelRatio);
 c.height = Math.floor(window.innerHeight*devicePixelRatio);
+c.style.width = window.innerWidth + "px";
+c.style.height = window.innerHeight + "px";
 let rangeY = rangeX * (height / width);
 let imageData = ctx.createImageData(c.width, c.height);
 let data = imageData.data;
@@ -157,6 +159,7 @@ async function render() {
   if (currentId !== renderId) return;
   await draw(currentId);
 }
+render();
 // Touch / mouse dragging
 let dragging = false;
 let lastX = 0;
