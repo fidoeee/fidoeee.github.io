@@ -249,6 +249,9 @@ c.addEventListener("pointercancel", function (event) {
   }
 });
 render();
+ctx.beginPath();
+ctx.arc(c.width / 2, c.height / 2, 100, 0, Math.PI * 2);
+ctx.stroke();
 </script>
 </body>
 </html>
