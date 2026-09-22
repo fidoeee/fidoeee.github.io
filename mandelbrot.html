@@ -36,7 +36,7 @@
       let rangeY = rangeX * (c.height / c.width);
       let renderId = 0;
       let passes = 4;
-      let prevPass = passes * 4;
+      let prevPass = passes * 2;
       let baseIter = 50;
       let iterFactor = 30;
       let baseZoom = 3;
@@ -45,7 +45,6 @@
         baseIter + iterFactor * Math.pow(zoomLevel, 1.5),
       );
       function preview(currentId) {
-        let start = performance.now();
         imageData = ctx.createImageData(c.width, c.height);
         data = imageData.data;
         // Black background
@@ -89,13 +88,6 @@
           }
         }
         ctx.putImageData(imageData, 0, 0);
-        console.log(
-          "Preview:",
-          (performance.now() - start).toFixed(2),
-          "ms",
-          "Iterations:",
-          maxIter,
-        );
         if (currentId !== renderId) return false;
         return true;
       }
@@ -151,6 +143,7 @@
           }
         }
         ctx.putImageData(imageData, 0, 0);
+        if (currentId !== renderId) return false;
       }
       async function render() {
         let currentId = ++renderId;
