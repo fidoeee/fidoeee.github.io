@@ -22,8 +22,8 @@
 <script>
 let c = document.getElementById("canvas");
 let ctx = c.getContext("2d");
-c.width = Math.floor(window.innerWidth * devicePixelRatio);
-c.height = Math.floor(window.innerHeight * devicePixelRatio);
+c.width = Math.floor(window.innerWidth * 1);
+c.height = Math.floor(window.innerHeight * 1);
 let imageData = ctx.createImageData(c.width, c.height);
 let data = imageData.data;
 let zoomFactor = 1.1;
@@ -32,7 +32,7 @@ let rangeX = 2;
 let rangeY = rangeX * (c.height / c.width);
 let renderId = 0;
 let passes = 4;
-let prevPass = passes * 2;
+let prevPass = passes * 4;
 let baseIter = 50;
 let iterFactor = 30;
 let baseZoom = 3;
@@ -248,11 +248,6 @@ c.addEventListener("pointercancel", function (event) {
     lastPinchDistance = null;
   }
 });
-
-ctx.strokeStyle = "white";
-ctx.beginPath();
-ctx.arc(c.width / 2, c.height / 2, 100, 0, Math.PI * 2);
-ctx.stroke();
 </script>
 </body>
 </html>
