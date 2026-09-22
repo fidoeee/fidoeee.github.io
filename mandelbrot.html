@@ -11,8 +11,6 @@
   }
   canvas {
     display: block;
-    width: 100vw;
-    height: 100vh;
     touch-action: none;
   }
 </style>
@@ -22,8 +20,14 @@
 <script>
 let c = document.getElementById("canvas");
 let ctx = c.getContext("2d");
-c.width = Math.floor(window.innerWidth * 1);
-c.height = Math.floor(window.innerHeight * 1);
+let width = window.innerWidth;
+let height = window.innerHeight;
+let dpr = window.devicePixelRatio;
+c.width = Math.floor(width * dpr);
+c.height = Math.floor(height * dpr);
+c.style.width = width + "px";
+c.style.height = height + "px";
+let rangeY = rangeX * (height / width);
 let imageData = ctx.createImageData(c.width, c.height);
 let data = imageData.data;
 let zoomFactor = 1.1;
