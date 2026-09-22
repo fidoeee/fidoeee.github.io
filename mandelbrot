@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: black;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    touch-action: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+let c = document.getElementById("canvas");
+let ctx = c.getContext("2d");
+c.width = Math.floor(window.innerWidth * devicePixelRatio);
+c.height = Math.floor(window.innerHeight * devicePixelRatio);
+let imageData = ctx.createImageData(c.width, c.height);
+let data = imageData.data;
+let zoomFactor = 1.1;
+let camera = { x: 0, y: 0, zoom: 1 };
+let rangeX = 2;
+let rangeY = rangeX * (c.height / c.width);
+let renderId = 0;
+let passes = 4;
+let prevPass = passes * 2;
+let baseIter = 50;
+let iterFactor = 30;
+let baseZoom = 3;
+let zoomLevel = Math.max(0, Math.log2(camera.zoom / baseZoom));
+let maxIter = Math.floor(
+  baseIter + iterFactor * Math.pow(zoomLevel, 1.5)
+);
+function preview(currentId) {
+  let start = performance.now();
+  imageData = ctx.createImageData(c.width, c.height);
+  data = imageData.data;
+  // Black background
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 0;
+    data[i + 1] = 0;
+    data[i + 2] = 0;
+    data[i + 3] = 255;
+  }
+  let blockSize = prevPass;
+  for (let x = 0; x < c.width; x += prevPass) {
+    for (let y = 0; y < c.height; y += prevPass) {
+      let x0 = ((x / c.width - 0.5) * rangeX) / camera.zoom + camera.x;
+      let y0 = ((y / c.height - 0.5) * rangeY) / camera.zoom + camera.y;
+      let zx = 0;
+      let zy = 0;
+      let iter = 0;
+      while (iter < maxIter) {
+        let newZx = zx * zx - zy * zy + x0;
+        let newZy = 2 * zx * zy + y0;
+        zx = newZx;
+        zy = newZy;
+        iter++;
+        if (zx * zx + zy * zy > 4) {
+          break;
+        }
+      }
+      let gray = iter === maxIter ? 0 : (iter / maxIter) * 255;
+      for (let bx = 0; bx < blockSize; bx++) {
+        for (let by = 0; by < blockSize; by++) {
+          let px = x + bx;
+          let py = y + by;
+          if (px >= c.width || py >= c.height) continue;
+          let index = (py * c.width + px) * 4;
+          data[index] = gray;
+          data[index + 1] = gray;
+          data[index + 2] = gray;
+          data[index + 3] = 255;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+  console.log(
+    "Preview:",
+    (performance.now() - start).toFixed(2),
+    "ms",
+    "Iterations:",
+    maxIter
+  );
+  if (currentId !== renderId) return false;
+  return true;
+}
+async function draw(currentId) {
+  imageData = ctx.createImageData(c.width, c.height);
+  data = imageData.data;
+  // Black background
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 0;
+    data[i + 1] = 0;
+    data[i + 2] = 0;
+    data[i + 3] = 255;
+  }
+  for (let offsetX = 0; offsetX < passes; offsetX++) {
+    for (let offsetY = 0; offsetY < passes; offsetY++) {
+      // Bigger blocks at the top-left,
+      // progressively smaller toward bottom-right
+      let blockSize = passes - Math.max(offsetX, offsetY);
+      for (let x = offsetX; x < c.width; x += passes) {
+        for (let y = offsetY; y < c.height; y += passes) {
+          let x0 = ((x / c.width - 0.5) * rangeX) / camera.zoom + camera.x;
+          let y0 = ((y / c.height - 0.5) * rangeY) / camera.zoom + camera.y;
+          let zx = 0;
+          let zy = 0;
+          let iter = 0;
+          while (iter < maxIter) {
+            let newZx = zx * zx - zy * zy + x0;
+            let newZy = 2 * zx * zy + y0;
+            zx = newZx;
+            zy = newZy;
+            iter++;
+            if (zx * zx + zy * zy > 4) {
+              break;
+            }
+          }
+          let gray = iter === maxIter ? 0 : (iter / maxIter) * 255;
+          for (let bx = 0; bx < blockSize; bx++) {
+            for (let by = 0; by < blockSize; by++) {
+              let px = x + bx;
+              let py = y + by;
+              if (px >= c.width || py >= c.height) continue;
+              let index = (py * c.width + px) * 4;
+              data[index] = gray;
+              data[index + 1] = gray;
+              data[index + 2] = gray;
+              data[index + 3] = 255;
+            }
+          }
+        }
+      }
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+async function render() {
+  let currentId = ++renderId;
+  let completed = preview(currentId);
+  if (!completed) return;
+  await new Promise(requestAnimationFrame);
+  if (currentId !== renderId) return;
+  await new Promise(requestAnimationFrame);
+  if (currentId !== renderId) return;
+  await new Promise(requestAnimationFrame);
+  if (currentId !== renderId) return;
+  await draw(currentId);
+}
+// Touch / mouse dragging
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+c.addEventListener("pointerdown", function (event) {
+  dragging = true;
+  lastX = event.clientX;
+  lastY = event.clientY;
+  c.setPointerCapture(event.pointerId);
+});
+c.addEventListener("pointermove", function (event) {
+  if (!dragging) return;
+  let dx = event.clientX - lastX;
+  let dy = event.clientY - lastY;
+  camera.x -= (dx * rangeX) / c.clientWidth / camera.zoom;
+  camera.y -= (dy * rangeY) / c.clientHeight / camera.zoom;
+  lastX = event.clientX;
+  lastY = event.clientY;
+  render();
+});
+c.addEventListener("pointerup", function (event) {
+  dragging = false;
+  c.releasePointerCapture(event.pointerId);
+});
+c.addEventListener("pointercancel", function () {
+  dragging = false;
+});
+// Mouse wheel / trackpad zoom
+c.addEventListener("wheel", function (event) {
+  event.preventDefault();
+  if (event.deltaY < 0) {
+    camera.zoom *= zoomFactor;
+  } else {
+    camera.zoom /= zoomFactor;
+  }
+  zoomLevel = Math.max(
+    0,
+    Math.log2(camera.zoom / baseZoom)
+  );
+  maxIter = Math.floor(
+    baseIter + iterFactor * Math.pow(zoomLevel, 1.5)
+  );
+  render();
+});
+// Pinch zoom
+let touches = new Map();
+let lastPinchDistance = null;
+c.addEventListener("pointerdown", function (event) {
+  touches.set(event.pointerId, {
+    x: event.clientX,
+    y: event.clientY
+  });
+});
+c.addEventListener("pointermove", function (event) {
+  if (!touches.has(event.pointerId)) return;
+  touches.set(event.pointerId, {
+    x: event.clientX,
+    y: event.clientY
+  });
+  if (touches.size !== 2) return;
+  let points = [...touches.values()];
+  let dx = points[0].x - points[1].x;
+  let dy = points[0].y - points[1].y;
+  let distance = Math.hypot(dx, dy);
+  if (lastPinchDistance !== null) {
+    let scale = distance / lastPinchDistance;
+    camera.zoom *= scale;
+    zoomLevel = Math.max(
+      0,
+      Math.log2(camera.zoom / baseZoom)
+    );
+    maxIter = Math.floor(
+      baseIter + iterFactor * Math.pow(zoomLevel, 1.5)
+    );
+    render();
+  }
+  lastPinchDistance = distance;
+});
+c.addEventListener("pointerup", function (event) {
+  touches.delete(event.pointerId);
+  if (touches.size < 2) {
+    lastPinchDistance = null;
+  }
+});
+c.addEventListener("pointercancel", function (event) {
+  touches.delete(event.pointerId);
+  if (touches.size < 2) {
+    lastPinchDistance = null;
+  }
+});
+render();
+</script>
+</body>
+</html>
