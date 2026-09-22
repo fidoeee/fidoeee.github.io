@@ -156,12 +156,10 @@
         let currentId = ++renderId;
         let completed = preview(currentId);
         if (!completed) return;
-        await new Promise(requestAnimationFrame);
-        if (currentId !== renderId) return;
-        await new Promise(requestAnimationFrame);
-        if (currentId !== renderId) return;
-        await new Promise(requestAnimationFrame);
-        if (currentId !== renderId) return;
+        for (let i = 0; i < 5; i++) {
+          await new Promise(requestAnimationFrame);
+          if (currentId !== renderId) return;
+        }
         await draw(currentId);
       }
       render();
