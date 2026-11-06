@@ -1,24 +1,9 @@
 let c = document.getElementById("canvas");
 let ctx = c.getContext('2d');
 
-// Canvas dimensions and high-DPI resolution scaling
-let canvasWidth = 1200;
-let canvasHeight = 600;
-
-function fixResolution() {
-  const dpr = window.devicePixelRatio || 1;
-  canvasWidth = window.innerWidth;
-  canvasHeight = window.innerHeight;
-
-  c.width = canvasWidth * dpr;
-  c.height = canvasHeight * dpr;
-
-  ctx.resetTransform();
-  ctx.scale(dpr, dpr);
-}
-
-fixResolution();
-window.addEventListener('resize', fixResolution);
+// Set internal canvas resolution (your CSS will handle the stretch/sizing)
+c.width = 1200;
+c.height = 600;
 
 let prices = [];
 let price = Math.random() * 200 + 100;
@@ -50,7 +35,7 @@ let cpr = 0;
 let tH = 2.1;
 let tL = 1.9;
 
-// --- Menu UI Button Definitions (Anchored to panel) ---
+// --- UI Buttons Setup ---
 const down = { x: 870, y: 350, width: 45, height: 45, color: 'red' };
 const up = { x: 925, y: 350, width: 45, height: 45, color: 'green' };
 const Bet = { x: 980, y: 350, width: 50, height: 45, color: 'grey' };
@@ -58,11 +43,11 @@ const withdrawl = { x: 1040, y: 350, width: 75, height: 45, color: 'white' };
 const buy = { x: 870, y: 200, width: 110, height: 45, color: 'yellow' };
 const sell = { x: 995, y: 200, width: 110, height: 45, color: 'orange' };
 
-// Speed Selection Buttons
-const speedBtn05 = { x: 870, y: 140, width: 50, height: 30, speedVal: 0.5 };
-const speedBtn1 = { x: 930, y: 140, width: 50, height: 30, speedVal: 1.0 };
-const speedBtn2 = { x: 990, y: 140, width: 50, height: 30, speedVal: 2.0 };
-const speedBtn5 = { x: 1050, y: 140, width: 50, height: 30, speedVal: 5.0 };
+// Speed Selection Buttons (Placed near the bottom)
+const speedBtn05 = { x: 870, y: 70, width: 45, height: 25, speedVal: 0.5 };
+const speedBtn1 = { x: 925, y: 70, width: 45, height: 25, speedVal: 1.0 };
+const speedBtn2 = { x: 980, y: 70, width: 45, height: 25, speedVal: 2.0 };
+const speedBtn5 = { x: 1035, y: 70, width: 45, height: 25, speedVal: 5.0 };
 
 const keys = {};
 window.addEventListener('keydown', (e) => { keys[e.key] = true; });
@@ -74,7 +59,7 @@ window.addEventListener('keydown', (e) => {
   setTimeout(() => { key[e.key] = false; }, 50);
 });
 
-// Helper: Mouse wheel zoom ONLY on the chart section (left side)
+// Mouse wheel zooming (Only works when hovering over the chart area)
 c.addEventListener('wheel', (e) => {
   let pos = getMousePos(c, e);
   if (pos.x < 850) {
@@ -88,37 +73,43 @@ c.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
+// Un-flips the canvas locally just for text rendering so it stays right-side up
 function write(x, y, text, size, color, align) {
+  ctx.save();
   ctx.fillStyle = color;
-  ctx.font = `${size}px sans-serif`;
+  ctx.font = size + 'px sans-serif';
+  ctx.translate(x, y);
+  ctx.scale(1, -1); 
   ctx.textAlign = align;
-  ctx.fillText(text, x, y);
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
 }
 
+// Inverts the Y-axis mouse tracking to match the inverted canvas
 function getMousePos(canvas, event) {
   let rect = canvas.getBoundingClientRect();
-  let scaleX = canvasWidth / rect.width;
-  let scaleY = canvasHeight / rect.height;
+  let scaleX = canvas.width / rect.width;
+  let scaleY = canvas.height / rect.height;
   return {
     x: (event.clientX - rect.left) * scaleX,
-    y: (event.clientY - rect.top) * scaleY
+    y: canvas.height - ((event.clientY - rect.top) * scaleY) 
   };
 }
 
 function isInside(pos, rect) {
-  return pos.x >= rect.x && pos.x <= rect.x + rect.width && pos.y >= rect.y && pos.y <= rect.y + rect.height;
-}
-
-// Convert stock price to Canvas Y coordinate (Higher price = higher on screen)
-function priceToY(p) {
-  return (canvasHeight / 2) - (p - scrollY) / zoom;
+  return pos.x > rect.x && pos.x < rect.x + rect.width && pos.y < rect.y + rect.height && pos.y > rect.y;
 }
 
 function draw() {
   speed = baseSpeed * speedMultiplier;
-  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  
+  // Reset transform to clear the screen safely, then apply global inversion
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.translate(0, c.height);
+  ctx.scale(1, -1);
 
-  // Stock price generator
+  // Generate price series instantly without delay
   let intTime = Math.floor(time);
   while (prices.length <= intTime + 10) {
     let v = instability;
@@ -134,12 +125,12 @@ function draw() {
 
   cpr = Math.floor(time);
 
-  if (mode === 0) {
+  if (mode == 0) {
     time += speed / 1000;
     scrollX += (time - 50 - scrollX) / 5;
     scrollY += (prices[cpr] - scrollY) / 50;
     if (scrollY < 0) scrollY = 0;
-  } else if (mode === 1) {
+  } else if (mode == 1) {
     if (keys['w']) scrollY += 3 * zoom;
     if (keys['s']) scrollY -= 3 * zoom;
     if (keys['a']) scrollX -= 3 * zoom;
@@ -153,9 +144,9 @@ function draw() {
   if (keys['q']) baseSpeed /= 1.01;
   if (keys['e']) baseSpeed *= 1.01;
   if (key['r']) baseSpeed = (baseSpeed !== 0) ? 0 : 100;
-
+  
   if (key['x']) {
-    if (mode === 0) {
+    if (mode == 0) {
       mode = 1;
     } else {
       scrollX += (time - 50 - scrollX) / 1.5;
@@ -167,41 +158,41 @@ function draw() {
     prices.splice(intTime, prices.length - intTime);
   }
 
-  // --- Draw Stock Chart Line ---
+  // --- Draw Stock Chart Line (Fixed Extra Line Bug) ---
   ctx.beginPath();
-  let limit = Math.min(intTime, prices.length - 1);
   let started = false;
-
-  for (let i = 0; i <= limit; i++) {
+  for (let i = 0; i <= intTime; i++) {
     let px = 428 - (scrollX - i) / zoom;
-    let py = priceToY(prices[i]);
-
+    let py = 300 + (prices[i] - scrollY) / zoom;
+    
     if (!started) {
-      ctx.moveTo(px, py);
+      ctx.moveTo(px, py); // Start path explicitly at the first point
       started = true;
     } else {
       ctx.lineTo(px, py);
     }
   }
-
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#00ff66';
   ctx.stroke();
 
   // --- Screen Mask Overlays ---
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, 50, canvasHeight); // Left scale background
-  if (mode === 0) ctx.fillRect(430, 0, 420, canvasHeight); // Right edge fade
-  ctx.fillRect(850, 0, canvasWidth - 850, canvasHeight); // Control panel mask
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, 49.4, 600); // Left mask
+  if (mode == 0) ctx.fillRect(430, 0, 500, 600); // Right side scroll mask
+  
+  // --- Control Panel Background ---
+  ctx.fillStyle = '#151515';
+  ctx.fillRect(850, 0, 350, 600);
 
-  // --- Grid Lines & Price Labels (Right Side Up) ---
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-  ctx.lineWidth = 1;
+  // --- Grid Lines & Scale Math (Restored exact previous formula) ---
+  ctx.strokeStyle = 'white';
+  ctx.lineWidth = 0.5;
   ctx.beginPath();
-  ctx.moveTo(50, 50);
-  ctx.lineTo(50, canvasHeight - 50);
-  ctx.moveTo(850, 50);
-  ctx.lineTo(850, canvasHeight - 50);
+  ctx.moveTo(50, 500);
+  ctx.lineTo(50, 100);
+  ctx.moveTo(800, 500);
+  ctx.lineTo(800, 100);
 
   let step = 1;
   if (zoom < 0.05 && zoom > 0.014) step = Math.floor(zoom * 100) / 100;
@@ -213,32 +204,24 @@ function draw() {
   let stride = (zoom >= 2) ? Math.ceil(zoom / 2) : (step || 1);
 
   for (let i = base + range; i > base - range; i -= stride) {
-    let val = Math.round(i * 100);
-    let yPos = priceToY(val);
-
-    if (yPos > 20 && yPos < canvasHeight - 20) {
-      ctx.moveTo(50, yPos);
-      ctx.lineTo(850, yPos);
-      write(30, yPos + 4, val.toString(), 13, '#ffffff', 'center');
-    }
+    let yPos = 300 + (Math.round(i * 100) - scrollY) / zoom;
+    ctx.moveTo(50, yPos);
+    ctx.lineTo(800, yPos);
+    write(30, yPos - 5, Math.round(i * 100), 13, 'white', 'center');
   }
   ctx.stroke();
 
-  // --- Control Panel Background ---
-  ctx.fillStyle = '#141619';
-  ctx.fillRect(850, 0, canvasWidth - 850, canvasHeight);
-
+  // --- UI Information Readouts ---
   trend = Math.random() * (tH - tL) + tL;
   instability = Math.random() * (inH - inL) + inL;
 
-  if (multiplier === 0) bet = 0;
+  if (multiplier == 0) bet = 0;
   let currentPrice = prices[cpr] || price;
 
-  // Information Readout
-  write(870, 50, "Stock Price: $" + (Math.floor(currentPrice * 100) / 100), 18, '#ffffff', 'left');
+  write(870, 550, "Stock Price: $" + (Math.floor(currentPrice * 100) / 100), 20, 'white', 'left');
 
   if (money < 0) {
-    write(100, 40, "You are in debt up to $1000", 24, '#ff4444', 'left');
+    write(100, 560, "You are in debt up to $1000", 28, 'red', 'left');
     debt = 'yes';
   }
 
@@ -248,42 +231,46 @@ function draw() {
 
   if (money >= 0) debtTimer = undefined;
 
-  write(870, 80, "Money: $" + (Math.round(money * 100) / 100), 18, '#4CAF50', 'left');
-  write(870, 110, "Stocks owned: " + stocks + " ($" + (Math.floor(stocks * currentPrice * 100) / 100) + ")", 18, '#ffffff', 'left');
-  write(870, 140, "Time: " + Math.floor(time) + "s", 18, '#ffffff', 'left');
-  write(870, 170, "Bet Fee: $" + Math.floor(betCost), 18, '#ffffff', 'left');
+  write(870, 520, "Money: $" + (Math.round(money * 100) / 100), 20, '#4CAF50', 'left');
+  write(870, 490, "Stocks owned: " + stocks + " ($" + (Math.floor(stocks * currentPrice * 100) / 100) + ")", 20, 'white', 'left');
+  write(870, 460, "Time: " + Math.floor(time) + "s", 20, 'white', 'left');
+  write(870, 430, "Bet Fee: $" + Math.floor(betCost), 20, 'white', 'left');
 
   if (timeLeft !== undefined) {
-    let color = timeLeft < 25 ? '#ff4444' : timeLeft < 50 ? 'orange' : 'yellow';
-    write(870, 480, "Bet Timer: " + Math.floor(timeLeft) + "s", 16, color, 'left');
+    let color = timeLeft < 25 ? 'red' : timeLeft < 50 ? 'orange' : 'yellow';
+    write(870, 140, "Bet Timer: " + Math.floor(timeLeft) + "s", 18, color, 'left');
   }
 
-  let betted = (bet === 0) ? 'none' : (bet === 1 ? 'UP' : 'DOWN');
-  write(870, 300, "Bet: " + betted + " | Multiplier: " + multiplier + "x", 16, '#ffffff', 'left');
+  if (debtTimer !== undefined) {
+    let color = debtTimer < 100 ? 'red' : debtTimer < 200 ? 'orange' : 'yellow';
+    write(870, 110, "Debt Due In: " + Math.floor(debtTimer), 18, color, 'left');
+  }
 
-  let gain = betPrice === 0 ? 0 : Math.floor(((currentPrice - betPrice) * bet * multiplier) / diff) * diff;
-  write(870, 330, "Start: $" + (Math.round(betPrice * 100) / 100) + " | Profit: $" + gain, 16, gain >= 0 ? '#4CAF50' : '#FF5252', 'left');
+  let betted = (bet == 0) ? 'none' : (bet == 1 ? 'UP' : 'DOWN');
+  write(870, 300, "Bet: " + betted + " | Multiplier: " + multiplier + "x", 16, 'white', 'left');
 
-  // --- Render UI Buttons ---
+  let gain = betPrice == 0 ? 0 : Math.floor(((currentPrice - betPrice) * bet * multiplier) / diff) * diff;
+  write(870, 270, "Start: $" + (Math.round(betPrice * 100) / 100) + " | Profit: $" + gain, 16, gain >= 0 ? '#4CAF50' : '#FF5252', 'left');
+
+  // --- Render Trading Buttons ---
   drawRectButton(down, "DOWN", 'white');
   drawRectButton(up, "UP", 'white');
   drawRectButton(Bet, "BET", 'white');
   drawRectButton(withdrawl, "CASH OUT", 'black');
-
   drawRectButton(buy, "BUY STOCK", 'black');
   drawRectButton(sell, "SELL STOCK", 'black');
 
-  // Speed selector buttons
-  write(870, 420, "Speed Multiplier:", 14, '#cccccc', 'left');
+  // --- Render Speed Control Buttons ---
+  write(870, 100, "Speed Control:", 14, '#cccccc', 'left');
   [speedBtn05, speedBtn1, speedBtn2, speedBtn5].forEach(btn => {
     let active = speedMultiplier === btn.speedVal;
     drawRectButton(btn, btn.speedVal + "x", active ? 'yellow' : 'white', active ? '#4444aa' : '#222233');
   });
 
-  if (mode === 0) {
+  if (mode == 0) {
     if (Math.floor(timeLeft) > 0) {
       timeLeft -= speed / 1000;
-    } else if (Math.floor(timeLeft) === 0 && betPrice > 0) {
+    } else if (Math.floor(timeLeft) == 0 && betPrice > 0) {
       if (Math.round((currentPrice - betPrice) * bet * multiplier) > 0) {
         money += gain;
         if (money > 0) debtTimer = undefined;
@@ -293,6 +280,9 @@ function draw() {
       betPrice = 0;
       timeLeft = undefined;
     }
+    if (Math.floor(debtTimer) > 0) {
+      debtTimer -= speed / 1000;
+    }
   }
 
   requestAnimationFrame(draw);
@@ -301,7 +291,8 @@ function draw() {
 function drawRectButton(btn, text, textColor = 'white', bgColor = null) {
   ctx.fillStyle = bgColor || btn.color;
   ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
-  write(btn.x + btn.width / 2, btn.y + btn.height / 2 + 4, text, 12, textColor, 'center');
+  // Subtracting 4 from Y centers the upright text vertically in an inverted-Y system
+  write(btn.x + btn.width / 2, btn.y + btn.height / 2 - 4, text, 11, textColor, 'center');
 }
 
 function gameClicks() {
@@ -309,25 +300,22 @@ function gameClicks() {
     let mousePos = getMousePos(c, evt);
     let currentPrice = prices[cpr] || price;
 
-    // Speed button clicks
     [speedBtn05, speedBtn1, speedBtn2, speedBtn5].forEach(btn => {
-      if (isInside(mousePos, btn)) {
-        speedMultiplier = btn.speedVal;
-      }
+      if (isInside(mousePos, btn)) speedMultiplier = btn.speedVal;
     });
 
-    if (betPrice === 0) {
+    if (betPrice == 0) {
       if (isInside(mousePos, down)) {
-        if (bet === -1 || bet === 0) { multiplier += 1; bet = -1; }
+        if (bet == -1 || bet == 0) { multiplier += 1; bet = -1; }
         else multiplier -= 1;
       }
       if (isInside(mousePos, up)) {
-        if (bet === 1 || bet === 0) { multiplier += 1; bet = 1; }
+        if (bet == 1 || bet == 0) { multiplier += 1; bet = 1; }
         else multiplier -= 1;
       }
     }
     if (isInside(mousePos, Bet)) {
-      if (betPrice === 0 && multiplier > 0) {
+      if (betPrice == 0 && multiplier > 0) {
         betPrice = currentPrice;
         timeLeft = Math.random() * (timeLeftH - timeLeftL) + timeLeftL;
         money -= betCost;
@@ -335,11 +323,12 @@ function gameClicks() {
       }
     }
     if (isInside(mousePos, withdrawl)) {
-      if (bet !== 0 && betPrice !== 0) {
+      if (bet != 0 && betPrice != 0) {
         let gain = Math.floor(((currentPrice - betPrice) * bet * multiplier) / diff) * diff;
         money += gain;
         betPrice = 0;
         timeLeft = undefined;
+        if (money < 0 && money > -1000) debtTimer = Math.random() * (700 - 400) + 400;
         if (money > 0) { debtTimer = undefined; debt = 'no'; }
       }
     }
