@@ -473,6 +473,12 @@ function updateRangeEnemyInfo() {
 
 // STOP THE CURRENT BATTLE
 function stopBattle() {
+  // 1. Clear any pending timers
+  if (typeof autoWaveTimeout !== "undefined" && autoWaveTimeout !== null) {
+    clearTimeout(autoWaveTimeout);
+    autoWaveTimeout = null;
+  }
+
   if (battleLoop !== null) {
     clearInterval(battleLoop);
     battleLoop = null;
@@ -485,9 +491,15 @@ function stopBattle() {
 
   fastForward = false;
 
+  // 2. Reset active wave arrays
+  enemies = [];
+  activeUnits = [];
+
+  // 3. Reset skip button state
   skipBattleButton.disabled = true;
   skipBattleButton.textContent = "Skip";
 
+  // 4. Refresh UI displays
   updateUI();
   renderDeployment();
   renderStageSelect();
@@ -506,8 +518,8 @@ function checkBattleEnd() {
   }
 
   if (enemies.length === 0) {
-    handleWaveCleared();
-    stopBattle();
+    stopBattle();         // 1. Stop active battle loop first
+    handleWaveCleared();  // 2. Clear wave & queue auto-start timer second
     return true;
   }
 
@@ -650,6 +662,9 @@ function showBattleTab(tabName) {
 
   if (tabName === "enemies") renderEnemyList();
   if (tabName === "stats") renderStatsList();
+  if (tabName === "battle") {
+    renderAutoWaveControl();
+  }
 }
 
 // SHOW STATISTICS IN THE STATS TAB
@@ -737,6 +752,46 @@ function renderStatsList() {
   }
 }
 
+function renderAutoWaveControl() {
+  if (typeof isAutoWaveUnlocked !== "function") return;
+
+  let container = document.getElementById("auto-wave-control-container");
+  const isUnlocked = isAutoWaveUnlocked();
+
+  // If locked, clean up element if present
+  if (!isUnlocked) {
+    if (container) container.remove();
+    return;
+  }
+
+  const targetParent = skipBattleButton ? skipBattleButton.parentNode : battleTab;
+  if (!targetParent) return;
+
+  if (!container) {
+    container = document.createElement("label");
+    container.id = "auto-wave-control-container";
+    container.className = "auto-start-toggle-label";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = "toggle-auto-wave-checkbox";
+    cb.checked = autoStartWaveEnabled;
+    cb.addEventListener("change", (e) => {
+      autoStartWaveEnabled = e.target.checked;
+      if (typeof saveCampaignProgress === "function") saveCampaignProgress();
+    });
+
+    const textSpan = document.createElement("span");
+    textSpan.textContent = "Auto-Start";
+
+    container.append(cb, textSpan);
+    targetParent.appendChild(container);
+  } else {
+    const cb = container.querySelector("#toggle-auto-wave-checkbox");
+    if (cb) cb.checked = autoStartWaveEnabled;
+  }
+}
+
 // SLOW MODE (Legacy function preserved)
 function toggleSlowMode() {
   slowMode = !slowMode;
@@ -819,7 +874,12 @@ function battleStart(waveNumber) {
 }
 
 // BUTTON EVENTS
-skipBattleButton.addEventListener("click", toggleFastForward);
+skipBattleButton.addEventListener("click", () => {
+  if (typeof cancelAutoRepeat === "function") {
+    cancelAutoRepeat();
+  }
+  toggleFastForward();
+});
 
 battleTabButton.addEventListener("click", () => {
   showBattleTab("battle");
@@ -902,6 +962,7 @@ function updateSpeedDropdownLock() {
 
 renderEnemyList();
 renderStatsList();
+renderAutoWaveControl();
 
 if (typeof updateSpeedDropdownLock === "function") {
   updateSpeedDropdownLock();

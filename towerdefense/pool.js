@@ -60,6 +60,15 @@ const poolUpgrade4 = [
   "beam_turret",
 ];
 
+const poolUpgrade5 = [
+  "chrono_accelerator",
+  "singularity_cannon",
+  "dissonance_array",
+  "vortex_projector", // Epic
+  "hyper_beam", // Legendary
+  "tachyon_lance", // Legendary
+];
+
 // --- REAR TOWERS POOLS ---
 const rearPool = ["base_battery", "base_mortar"];
 
@@ -67,14 +76,69 @@ const rearPoolUpgrade1 = ["base_howitzer", "base_cannon"];
 const rearPoolUpgrade2 = ["base_heavy_battery", "base_missile"];
 const rearPoolUpgrade3 = ["base_storm_battery", "base_artillery"];
 const rearPoolUpgrade4 = ["base_sentry_array", "base_titan_cannon"];
+const rearPoolUpgrade5 = [
+  "base_doomsday_silo",
+  "base_aegis_generator",
+  "base_apocalypse_array",
+];
+
+/* ==========================================================================
+   RARITY SETTINGS
+   ========================================================================== */
+
+const rarityOrder = [
+  "Mythic",
+  "Legendary",
+  "Epic",
+  "Rare",
+  "Uncommon",
+  "Common",
+];
+
+const rarityRank = {
+  Mythic: 6,
+  Legendary: 5,
+  Epic: 4,
+  Rare: 3,
+  Uncommon: 2,
+  Common: 1,
+};
+
+const rarityMultipliers = {
+  Common: 1.0,
+  Uncommon: 1.25,
+  Rare: 1.6,
+  Epic: 2.0,
+  Legendary: 2.5,
+  Mythic: 3.2,
+};
+
+const RARITY_WEIGHTS = {
+  Common: 50,
+  Uncommon: 30,
+  Rare: 12,
+  Epic: 6,
+  Legendary: 2,
+  Mythic: 0.8,
+};
+
+const rarityXpMap = {
+  Common: 75,
+  Uncommon: 150,
+  Rare: 400,
+  Epic: 750,
+  Legendary: 3000,
+  Mythic: 7500,
+};
 
 /**
  * Returns the currently available unit pool based on Tech Tree progression.
- * @param {"Main" | "Rear"} category 
+ * @param {"Main" | "Rear"} category
  * @returns {string[]} Array of available unit keys
  */
 function getAvailableUnitPool(category = "Main") {
-  const techLevel = typeof getTechNodeLevel === "function" ? getTechNodeLevel("eco_pool") : 0;
+  const techLevel =
+    typeof getTechNodeLevel === "function" ? getTechNodeLevel("eco_pool") : 0;
 
   if (category === "Rear") {
     const currentRearPool = [...rearPool];
@@ -82,6 +146,7 @@ function getAvailableUnitPool(category = "Main") {
     if (techLevel >= 2) currentRearPool.push(...rearPoolUpgrade2);
     if (techLevel >= 3) currentRearPool.push(...rearPoolUpgrade3);
     if (techLevel >= 4) currentRearPool.push(...rearPoolUpgrade4);
+    if (techLevel >= 5) currentRearPool.push(...rearPoolUpgrade5);
     return currentRearPool;
   }
 
@@ -90,6 +155,7 @@ function getAvailableUnitPool(category = "Main") {
   if (techLevel >= 2) currentPool.push(...poolUpgrade2);
   if (techLevel >= 3) currentPool.push(...poolUpgrade3);
   if (techLevel >= 4) currentPool.push(...poolUpgrade4);
+  if (techLevel >= 5) currentPool.push(...poolUpgrade5);
 
   return currentPool;
 }

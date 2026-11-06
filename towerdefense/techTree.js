@@ -12,7 +12,8 @@ const challengeBonusNodes = {
     name: "Flat Base Damage",
     costPerLevel: (lvl) => 1 + Math.floor(lvl / 5),
     getBonus: (lvl) => lvl * 0.5,
-    getDescription: (lvl) => `All towers +${(lvl * 0.5).toFixed(1)} base damage.`,
+    getDescription: (lvl) =>
+      `All towers +${(lvl * 0.5).toFixed(1)} base damage.`,
   },
   cb_reload_speed: {
     id: "cb_reload_speed",
@@ -21,7 +22,7 @@ const challengeBonusNodes = {
     getBonus: (lvl) => lvl * 0.2,
     getDescription: (lvl) => `All towers +${(lvl * 0.2).toFixed(2)} fire rate.`,
   },
-};  
+};
 
 const techNodes = {
   // --- CORE OFFENSE BRANCH ---
@@ -105,6 +106,7 @@ const techNodes = {
       return `Base towers -${total}% initial load time (-15%)`;
     },
   },
+
   // --- CORE ECONOMY BRANCH ---
   eco_gold: {
     id: "eco_gold",
@@ -130,48 +132,73 @@ const techNodes = {
     costMultiplier: 3,
     maxLevel: 5,
     requiresNode: "eco_gold",
-
-    // Formula: Starts at 3.00 (Lvl 0) and drops by 0.28 per rank down to 1.60 (Lvl 5)
     getBonus: (lvl) => {
       const techLvl = Math.min(5, Math.max(0, lvl));
       const base = 3.0 - techLvl * 0.28;
       return Number(Math.max(1.6, base).toFixed(2));
     },
-
     getDescription: (lvl) => {
       const techLvl = Math.min(5, Math.max(0, lvl));
       const getBaseAt = (l) => Number(Math.max(1.6, 3.0 - l * 0.28).toFixed(2));
-
       const currentBase = getBaseAt(techLvl);
       if (techLvl >= 5)
         return `Merge cost scaling: ${currentBase.toFixed(2)}^x (Maxed)`;
-
       const nextBase = getBaseAt(techLvl + 1);
       return `Current: ${currentBase.toFixed(2)}^x → Next: ${nextBase.toFixed(2)}^x`;
     },
   },
 
+  // --- QUALITY OF LIFE (QoL) ---
   eco_speed: {
     id: "eco_speed",
     name: "Tactical Overclock",
-    category: "Eco",
+    category: "QoL",
     costBase: 300,
     costMultiplier: 1.2,
     maxLevel: 4,
     requiresStage: "1-5",
     getBonus: (lvl) => lvl,
     getDescription: (lvl) => {
-      if (lvl >= 4) return "2x, 4x, 8x, 16 Unlocked (MAX)";
+      if (lvl >= 4) return "2x, 4x, 8x, 16x Unlocked (MAX)";
       if (lvl === 3) return "8x speed option";
       if (lvl === 2) return "4x speed option";
       return "2x speed option";
     },
   },
+  eco_auto_wave: {
+    id: "eco_auto_wave",
+    name: "Auto-Start Wave",
+    category: "QoL",
+    costBase: 2000,
+    costMultiplier: 1.0,
+    maxLevel: 1,
+    requiresNode: "eco_speed",
+    requiresStage: "3-10",
+    getBonus: (lvl) => lvl,
+    getDescription: (lvl) =>
+      lvl >= 1 ? "Auto-start wave unlocked (Maxed)" : "Unlocks Auto-Start Wave",
+  },
+  eco_auto_repeat: {
+    id: "eco_auto_repeat",
+    name: "World Auto-Repeat",
+    category: "QoL",
+    costBase: 3000,
+    costMultiplier: 1.0,
+    maxLevel: 1,
+    requiresNode: "eco_auto_wave",
+    requiresStage: "3-10",
+    getBonus: (lvl) => lvl,
+    getDescription: (lvl) =>
+      lvl >= 1
+        ? "Auto-repeats world unlocked (Maxed)"
+        : "Unlocks Auto-Repeat World",
+  },
 
+  // --- BUILD POOLS ---
   eco_base_build: {
     id: "eco_base_build",
     name: "Base Defense Protocol",
-    category: "Eco",
+    category: "Build",
     costBase: 200,
     costMultiplier: 1.0,
     maxLevel: 1,
@@ -182,24 +209,46 @@ const techNodes = {
       return "Unlocks Rear Base Tower purchases";
     },
   },
-
   eco_pool: {
     id: "eco_pool",
     name: "Advanced Construction",
-    category: "Eco",
+    category: "Build",
     costBase: 1200,
     costMultiplier: 2.0,
-    maxLevel: 4,
+    maxLevel: 5,
     requiresNode: "eco_base_build",
-    requiresStage: ["1-10", "2-10", "3-10", "4-10"],
+    requiresStage: ["1-10", "2-10", "3-10", "4-10", "6-10"],
+    customCheck: (lvl) => {
+      // Level 4 -> 5 upgrade (Mythic tier unlock)
+      if (lvl === 4) {
+        return getLegendaryTowerCount() >= 2;
+      }
+      return true;
+    },
     getBonus: (lvl) => lvl,
     getDescription: (lvl) => {
-      if (lvl >= 4) return "Unlocked all tier build pools (MAX)";
+      if (lvl >= 5) return "Unlocked Tier 5 Mythic arsenal pool (MAX)";
+      if (lvl === 4) return "Unlocks Tier 5 Mythic arsenal pool (Stage 6-10 + 2 Legendary Towers)";
       if (lvl === 3) return "Unlocks Tier 4 high-tech arsenal (Stage 4-10)";
       if (lvl === 2) return "Unlocks Tier 3 heavy weapons (Stage 3-10)";
       if (lvl === 1) return "Unlocks Tier 2 specialized turrets (Stage 2-10)";
       return "Unlocks Tier 1 expanded build pool (Stage 1-10)";
     },
+  },
+  eco_focus_pool: {
+    id: "eco_focus_pool",
+    name: "Blueprint Focusing",
+    category: "Build",
+    costBase: 1500,
+    costMultiplier: 1.0,
+    maxLevel: 1,
+    requiresNode: "eco_pool", 
+    requiresStage: "3-1",
+    getBonus: (lvl) => lvl,
+    getDescription: (lvl) =>
+      lvl >= 1 
+        ? "Targeted tower focusing unlocked (Maxed)" 
+        : "Unlocks tower build focus",
   },
 
   // --- ADVANCED UNLOCKABLE BRANCH ---
@@ -208,7 +257,7 @@ const techNodes = {
     name: "Cross-Fire Matrix",
     category: "Special",
     costBase: 5000,
-    costMultiplier: 5,
+    costMultiplier: 3,
     maxLevel: 3,
     requiresNode: null,
     getBonus: (lvl) => lvl * 0.15,
@@ -239,11 +288,15 @@ const techNodes = {
     category: "Main",
     costBase: 1200,
     costMultiplier: 2,
-    maxLevel: 5,
+    costMultiplier1: 1.8,
+    costMultiplier2: 1.6,
+    costMultLevel1: 3,
+    costMultLevel2: 6,
+    maxLevel: 10,
     requiresNode: "offense_speed",
     getBonus: (lvl) => (lvl === 0 ? 0 : 10 * Math.pow(2, lvl - 1)),
     getDescription: (lvl) => {
-      if (lvl >= 5) return "Main towers ignore 160 flat enemy armor (Maxed)";
+      if (lvl >= 10) return "Main towers ignore 5120 flat enemy armor (Maxed)";
       const nextLvl = lvl + 1;
       const nextVal = 10 * Math.pow(2, nextLvl - 1);
       const currVal = lvl === 0 ? 0 : 10 * Math.pow(2, lvl - 1);
@@ -269,14 +322,37 @@ const techNodes = {
       return `+${total}% Consume EXP Bonus (+100%)`;
     },
   },
+
+  eco_wave_xp: {
+    id: "eco_wave_xp",
+    name: "Combat Experience",
+    category: "Eco",
+    costBase: 400,
+    costMultiplier: 3,
+    maxLevel: 5,
+    requiresNode: null,
+    getBonus: (lvl) => lvl * 0.5, // 50% per level
+    getDescription: (lvl) => {
+      if (lvl >= 5) return "+250% Wave XP (Maxed)";
+      const nextLvl = lvl + 1;
+      const total = nextLvl * 50;
+      return `+${total}% Wave XP (+50%)`;
+    },
+  },
 };
 
 const techTreeSections = {
-  miscellaneous: {
-    id: "miscellaneous",
-    title: "Miscellaneous",
+  build: {
+    id: "build",
+    title: "Build Pools",
     requiresNodes: [],
-    nodes: ["eco_speed", "eco_base_build", "eco_pool"],
+    nodes: ["eco_base_build", "eco_pool", "eco_focus_pool"], // Added the new node here
+  },
+  qol: {
+    id: "qol",
+    title: "Quality of Life",
+    requiresNodes: [],
+    nodes: ["eco_speed", "eco_auto_wave", "eco_auto_repeat"],
   },
   offense: {
     id: "offense",
@@ -300,7 +376,7 @@ const techTreeSections = {
     id: "exp_tech",
     title: "Experience & Training",
     requiresAnyNode: ["eco_speed", "eco_base_build", "eco_pool"],
-    nodes: ["exp_boost_mult"],
+    nodes: ["exp_boost_mult", "eco_wave_xp"], // Added the new node here
   },
   armor_tech: {
     id: "armor_tech",
@@ -328,6 +404,20 @@ function getTechNodeCost(nodeId) {
   const node = techNodes[nodeId];
   if (!node) return 0;
   const currentLvl = getTechNodeLevel(nodeId);
+  if (node.costMultiplier1 || node.costMultiplier2) {
+    const earlyLevels = Math.min(currentLvl, node.costMultLevel1);
+    const middleLevels = Math.min(
+      Math.max(currentLvl - node.costMultLevel1, 0),
+      node.costMultLevel2 - node.costMultLevel1, // Fixed range evaluation
+    );
+    const laterLevels = Math.max(currentLvl - node.costMultLevel2, 0);
+    return Math.round(
+      node.costBase *
+        Math.pow(node.costMultiplier, earlyLevels) *
+        Math.pow(node.costMultiplier1 || node.costMultiplier, middleLevels) *
+        Math.pow(node.costMultiplier2 || node.costMultiplier, laterLevels),
+    );
+  }
   return Math.round(node.costBase * Math.pow(node.costMultiplier, currentLvl));
 }
 
@@ -363,12 +453,16 @@ function canUpgradeNode(nodeId) {
     return false;
   }
 
-  // Support single stage string OR level-indexed stage array
   const requiredStage = Array.isArray(node.requiresStage)
     ? node.requiresStage[currentLvl]
     : node.requiresStage;
 
   if (requiredStage && !clearedStageIds.has(requiredStage)) {
+    return false;
+  }
+
+  // Check custom requirement (e.g. owning 2 Legendary towers)
+  if (typeof node.customCheck === "function" && !node.customCheck(currentLvl)) {
     return false;
   }
 
@@ -384,6 +478,13 @@ function getTechMainDamageMultiplier() {
     ? techNodes.spec_overclock.getBonus(getTechNodeLevel("spec_overclock"))
     : 0;
   return 1 + bonus + specBonus;
+}
+
+function getTechWaveExpMultiplier() {
+  const bonus = techNodes.eco_wave_xp
+    ? techNodes.eco_wave_xp.getBonus(getTechNodeLevel("eco_wave_xp"))
+    : 0;
+  return 1 + bonus;
 }
 
 function getTechArtilleryDamageMultiplier() {
@@ -456,18 +557,14 @@ function getConsumeXpBonus(unit, targetUnit = null) {
   const data = getUnitData(unit);
   const baseXp = rarityXpMap[data.rarity] || 50;
 
-  // Level bonus based strictly on the sacrificed tower's level (+50% base XP per level above 1)
   const levelBonus = (unit.level - 1) * 0.5 * baseXp;
-
   let rawXp = baseXp + levelBonus;
 
-  // Target (consuming) tower bonus: +25% XP yield per level above Level 1
   if (targetUnit && targetUnit.level > 1) {
     const targetLevelMultiplier = 1 + (targetUnit.level - 1) * 0.25;
     rawXp *= targetLevelMultiplier;
   }
 
-  // Apply Tech Tree EXP Boost Multiplier (Accelerated Learning)
   const techMult =
     typeof getTechExpBoostMultiplier === "function"
       ? getTechExpBoostMultiplier()
@@ -494,6 +591,14 @@ function getTechArtilleryInitialChargeBonus() {
     : 0;
 }
 
+function isAutoWaveUnlocked() {
+  return getTechNodeLevel("eco_auto_wave") >= 1;
+}
+
+function isAutoRepeatUnlocked() {
+  return getTechNodeLevel("eco_auto_repeat") >= 1;
+}
+
 /* ==========================================================================
    UPGRADE PURCHASING
    ========================================================================== */
@@ -510,7 +615,6 @@ function buyTechNode(nodeId) {
     `🔬 Researched ${techNodes[nodeId].name} (Level ${techUpgrades[nodeId]})! (-${cost} Gold)`,
   );
 
-  // Recalculate stats for all owned units
   [
     ...inventory,
     ...deployedUnits.filter(Boolean),
@@ -522,7 +626,6 @@ function buyTechNode(nodeId) {
   renderDeployment();
   renderTechTree();
 
-  // Refresh Campaign UI stage rewards & details immediately
   if (typeof renderStageSelect === "function") {
     renderStageSelect();
   }
@@ -537,22 +640,25 @@ function getAvailableChallengeTickets() {
   return ticketItem ? ticketItem.count : 0;
 }
 
-// Cost to upgrade from current level to next level
 function getChallengeBonusNextCost(nodeId) {
   const node = challengeBonusNodes[nodeId];
   if (!node) return 1;
   const lvl = getChallengeBonusLevel(nodeId);
-  return typeof node.costPerLevel === "function" ? node.costPerLevel(lvl) : node.costPerLevel;
+  return typeof node.costPerLevel === "function"
+    ? node.costPerLevel(lvl)
+    : node.costPerLevel;
 }
 
-// Total tickets spent on a specific node so far
 function getChallengeBonusSpent(nodeId) {
   const node = challengeBonusNodes[nodeId];
   if (!node) return 0;
   const lvl = getChallengeBonusLevel(nodeId);
   let spent = 0;
   for (let i = 0; i < lvl; i++) {
-    spent += typeof node.costPerLevel === "function" ? node.costPerLevel(i) : node.costPerLevel;
+    spent +=
+      typeof node.costPerLevel === "function"
+        ? node.costPerLevel(i)
+        : node.costPerLevel;
   }
   return spent;
 }
@@ -570,7 +676,11 @@ function buyChallengeBonus(nodeId) {
   ticketItem.count -= cost;
   challengeBonusUpgrades[nodeId] = lvl + 1;
 
-  [...inventory, ...deployedUnits.filter(Boolean), ...deployedBaseUnits.filter(Boolean)].forEach(recalculateUnitStats);
+  [
+    ...inventory,
+    ...deployedUnits.filter(Boolean),
+    ...deployedBaseUnits.filter(Boolean),
+  ].forEach(recalculateUnitStats);
 
   saveCampaignProgress();
   updateUI();
@@ -583,8 +693,10 @@ function refundChallengeBonus(nodeId) {
 
   const node = challengeBonusNodes[nodeId];
 
-  // Cost of the level being refunded (the last purchased level)
-  const refundCost = typeof node.costPerLevel === "function" ? node.costPerLevel(lvl - 1) : node.costPerLevel;
+  const refundCost =
+    typeof node.costPerLevel === "function"
+      ? node.costPerLevel(lvl - 1)
+      : node.costPerLevel;
 
   challengeBonusUpgrades[nodeId] = lvl - 1;
 
@@ -599,7 +711,11 @@ function refundChallengeBonus(nodeId) {
     });
   }
 
-  [...inventory, ...deployedUnits.filter(Boolean), ...deployedBaseUnits.filter(Boolean)].forEach(recalculateUnitStats);
+  [
+    ...inventory,
+    ...deployedUnits.filter(Boolean),
+    ...deployedBaseUnits.filter(Boolean),
+  ].forEach(recalculateUnitStats);
 
   saveCampaignProgress();
   updateUI();
@@ -628,7 +744,11 @@ function respecChallengeBonuses() {
 
   challengeBonusUpgrades = {};
 
-  [...inventory, ...deployedUnits.filter(Boolean), ...deployedBaseUnits.filter(Boolean)].forEach(recalculateUnitStats);
+  [
+    ...inventory,
+    ...deployedUnits.filter(Boolean),
+    ...deployedBaseUnits.filter(Boolean),
+  ].forEach(recalculateUnitStats);
 
   saveCampaignProgress();
   updateUI();
@@ -651,13 +771,11 @@ function renderTechTree() {
 
   container.replaceChildren();
 
-  // Switch to Challenge Bonus render if active
   if (currentTechPanelTab === "challengeBonus") {
     renderChallengeBonusTab(container);
     return;
   }
 
-  // Standard Tech Tree Render
   const grid = document.createElement("div");
   grid.className = "tech-tree-grid";
 
@@ -696,7 +814,11 @@ function renderTechTree() {
         section.requiresAnyNode &&
         section.requiresAnyNode.length > 0
       ) {
-        reqText = "Any Miscellaneous Tech Upgrade";
+        reqText =
+          "Level 1 in any: " +
+          section.requiresAnyNode
+            .map((id) => techNodes[id]?.name || id)
+            .join(" or ");
       }
 
       lockOverlay.innerHTML = `🔒 <strong>Locked</strong><br><small>Requires: ${reqText}</small>`;
@@ -749,6 +871,9 @@ function renderTechTree() {
       btn.type = "button";
       btn.className = "tech-upgrade-btn";
 
+      const customMet =
+        typeof node.customCheck !== "function" || node.customCheck(level);
+
       if (isMax) {
         btn.textContent = "MAXED";
         btn.disabled = true;
@@ -757,6 +882,10 @@ function renderTechTree() {
         btn.disabled = true;
       } else if (!stageMet) {
         btn.textContent = `Req: Stage ${requiredStage}`;
+        btn.disabled = true;
+      } else if (!customMet) {
+        // Displays when stage 6-10 is beaten, but player holds fewer than 2 Legendary towers
+        btn.textContent = `Req: Own 2 Legendary Towers (${getLegendaryTowerCount()}/2)`;
         btn.disabled = true;
       } else {
         btn.textContent = `Upgrade (${cost} Gold)`;
@@ -779,7 +908,6 @@ function renderTechTree() {
 function renderChallengeBonusTab(container) {
   const availableTickets = getAvailableChallengeTickets();
 
-  // Calculate total spent tickets to determine total pool
   let totalSpentTickets = 0;
   for (const nodeId of Object.keys(challengeBonusNodes)) {
     totalSpentTickets += getChallengeBonusSpent(nodeId);
@@ -817,7 +945,8 @@ function renderChallengeBonusTab(container) {
     const spentOnNode = getChallengeBonusSpent(nodeId);
     const nextCost = getChallengeBonusNextCost(nodeId);
 
-    const barPercent = totalTickets > 0 ? Math.min(100, (spentOnNode / totalTickets) * 100) : 0;
+    const barPercent =
+      totalTickets > 0 ? Math.min(100, (spentOnNode / totalTickets) * 100) : 0;
 
     const nodeCard = document.createElement("div");
     nodeCard.className = "tech-node-card";
@@ -837,7 +966,6 @@ function renderChallengeBonusTab(container) {
     desc.className = "tech-node-desc";
     desc.textContent = node.getDescription(level);
 
-    // Dynamic Ticket Allocation Progress Bar
     const track = document.createElement("div");
     track.className = "xp-track";
     track.style.margin = "6px 0";
@@ -848,7 +976,6 @@ function renderChallengeBonusTab(container) {
     fill.style.background = "#f59e0b";
     track.appendChild(fill);
 
-    // + / - Control Row
     const controlRow = document.createElement("div");
     controlRow.style.display = "flex";
     controlRow.style.gap = "6px";

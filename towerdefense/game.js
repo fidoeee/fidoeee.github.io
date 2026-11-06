@@ -39,7 +39,10 @@ let isLoading = false;
 let currentTechPanelTab = "techTree";
 
 // --- Build Pool & Shop State ---
+const FOCUS_TOWER_MULTIPLIER = 10;
 let shopPoolExpanded = false;
+let focusedMainTowerKey = null;
+let focusedRearTowerKey = null;
 
 // --- Stage & Campaign Progression ---
 let currentCampaignTabMode = "campaign"; // "campaign" | "challenge"
@@ -58,6 +61,23 @@ let stageEntered = false;
 let startWaveAvailable = false;
 let gameSpeedMultiplier = 1;
 let currentEnemySortMode = "default";
+let autoWaveTimeout = null;
+
+// --- Auto Battle State ---
+let autoStartWaveEnabled = false;
+let autoRepeatEnabled = false;
+let autoRepeatCount = 0; // 0 = Unlimited
+let autoRepeatRemaining = 0;
+const autoStageDelay = 100;
+const autoWorldDelay = 300;
+
+// --- Auto-Repeat Session Accumulator ---
+let autoRepeatSessionStats = {
+  runsCompleted: 0,
+  totalGold: 0,
+  totalSt: 0,
+  ticketsEarned: 0,
+};
 
 // --- Stage Accumulators (End-of-Stage Summary) ---
 let stageEnemyGoldEarned = 0;
@@ -87,42 +107,6 @@ let boostMenuSortOrder = "desc";
 
 let currentStagePage = 0;
 const stagesPerPage = 10;
-
-// --- Rarity Rankings ---
-const rarityRank = {
-  Legendary: 5,
-  Epic: 4,
-  Rare: 3,
-  Uncommon: 2,
-  Common: 1,
-};
-
-// Upgrade rarity multipliers
-
-const rarityMultipliers = {
-  Common: 1.0,
-  Uncommon: 1.25,
-  Rare: 1.6,
-  Epic: 2.0,
-  Legendary: 2.5,
-};
-
-// Define base weights for each rarity tier
-const RARITY_WEIGHTS = {
-  Common: 50,
-  Uncommon: 30,
-  Rare: 12,
-  Epic: 6,
-  Legendary: 2,
-};
-
-const rarityXpMap = {
-  Common: 75,
-  Uncommon: 150,
-  Rare: 400,
-  Epic: 750,
-  Legendary: 3000,
-};
 
 // --- Primary Data Collections ---
 const inventory = [];
@@ -270,6 +254,11 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       unpinTopBar,
       showMoreStats,
       showTechBonus,
+      autoStartWaveEnabled,
+      autoRepeatEnabled: false,
+      autoRepeatCount: 0,
+      focusedMainTowerKey,
+      focusedRearTowerKey,
     };
 
     localStorage.setItem(getSaveKey(slot), JSON.stringify(saveData));
@@ -451,6 +440,33 @@ function loadCampaignProgress(slot = currentSaveSlot) {
       startWaveAvailable = false;
     }
 
+    autoStartWaveEnabled = Boolean(saved.autoStartWaveEnabled);
+    autoRepeatCount = 0;
+    autoRepeatEnabled = false;
+    autoRepeatRemaining = 0;
+
+    if (saved.focusedMainTowerKey !== undefined) {
+      focusedMainTowerKey = saved.focusedMainTowerKey;
+    } else if (saved.focusedTowerKey !== undefined) {
+      focusedMainTowerKey = saved.focusedTowerKey; // Legacy save migration
+    } else {
+      focusedMainTowerKey = null;
+    }
+
+    if (saved.focusedRearTowerKey !== undefined) {
+      focusedRearTowerKey = saved.focusedRearTowerKey;
+    } else {
+      focusedRearTowerKey = null;
+    }
+
+    const activeStageList = currentCampaignTabMode === "challenge" ? challengeStages : stages;
+    const activeStageId = currentCampaignTabMode === "challenge" ? selectedChallengeStageId : selectedStageId;
+    const activeStage = activeStageList.find((s) => s.id === activeStageId);
+
+    if (activeStage) {
+      currentStagePage = Math.floor(activeStage.index / stagesPerPage);
+    }
+
     updateUI();
     renderInventory();
     renderDeployment();
@@ -577,6 +593,18 @@ function getSelectedStage() {
   return stages.find((s) => s.id === selectedStageId) ?? stages[0];
 }
 
+function cancelAutoRepeat() {
+  if (autoRepeatEnabled) {
+    autoRepeatEnabled = false;
+    autoStartWaveEnabled = false; // Disable Auto-Start Wave on cancel
+    autoRepeatRemaining = 0;
+    addLog("🛑 Auto-Repeat canceled by manual action.");
+
+    if (typeof renderStageSelect === "function") renderStageSelect();
+    if (typeof renderAutoWaveControl === "function") renderAutoWaveControl();
+  }
+}
+
 function getStageRewardMultiplier(stageId) {
   const clears = stageClearCounts[stageId] || 0;
   return Math.max(0.15, 1 - clears * (1 / MAX_CLEARS_FOR_REWARDS));
@@ -602,6 +630,16 @@ function getMaxDeployedUnits() {
         ? getTechExtraSlots()
         : 0;
   return maxDeployedUnits + extra;
+}
+
+function getLegendaryTowerCount() {
+  const allUnits = [
+    ...inventory,
+    ...deployedUnits.filter((u) => u !== null),
+    ...deployedBaseUnits.filter((u) => u !== null),
+  ];
+
+  return allUnits.filter((unit) => getUnitData(unit).rarity === "Legendary").length;
 }
 
 function getUnitData(unit) {
@@ -679,6 +717,39 @@ function toggleUnitLock(unitId) {
   renderDeployment();
   openUnitPopup(unit.id);
 }
+
+function getEffectiveTowerWeight(typeKey, pool, rarityCounts) {
+  const data = unitTypes[typeKey];
+  const rarity = data?.rarity || "Common";
+  const category = data?.category || "Main";
+  const baseWeight = RARITY_WEIGHTS[rarity] ?? 10;
+  const count = rarityCounts[rarity] || 1;
+
+  const isFocusUnlocked =
+    typeof getTechNodeLevel === "function" &&
+    getTechNodeLevel("eco_focus_pool") >= 1;
+
+  const focusedKey = category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
+
+  const isFocused = isFocusUnlocked && typeKey === focusedKey;
+  const focusedRarity = focusedKey
+    ? unitTypes[focusedKey]?.rarity || "Common"
+    : null;
+  const focusedInPool =
+    isFocusUnlocked && focusedKey && pool.includes(focusedKey);
+
+  // Return standard weight if focus tech is locked, no tower is focused, or there's only 1 tower of this rarity
+  if (!focusedInPool || focusedRarity !== rarity || count <= 1) {
+    return baseWeight;
+  }
+
+  const M =
+    typeof FOCUS_TOWER_MULTIPLIER !== "undefined" ? FOCUS_TOWER_MULTIPLIER : 3;
+  const wUnfocused = (count * baseWeight) / (M + count - 1);
+
+  return isFocused ? M * wUnfocused : wUnfocused;
+}
+
 /* ==========================================================================
    5. TOWER STATS, EXPERIENCE, MERGING and BUILD
    ========================================================================== */
@@ -752,15 +823,15 @@ function getGrowthFactor(level, unitCategory) {
     ? [
         { lvl: 1, factor: 1.75 },
         { lvl: 10, factor: 1.55 }, // Drop 1
-        { lvl: 30, factor: 1.38 }, // Drop 2
-        { lvl: 50, factor: 1.25 }, // Drop 3 (Floor)
-        { lvl: 150, factor: 1.25 },
+        { lvl: 30, factor: 1.33 }, // Drop 2
+        { lvl: 50, factor: 1.20 }, // Drop 3
+        { lvl: 150, factor: 1.20 },
       ]
     : [
         { lvl: 1, factor: 1.65 },
         { lvl: 10, factor: 1.48 }, // Drop 1
         { lvl: 30, factor: 1.32 }, // Drop 2
-        { lvl: 50, factor: 1.2 }, // Drop 3 (Floor)
+        { lvl: 50, factor: 1.2 }, // Drop 3
         { lvl: 150, factor: 1.2 },
       ];
 
@@ -811,7 +882,27 @@ function getRequiredXp(unitOrLevel, category = "Main", xpDiscountMult = 1.0) {
 function calculateWaveXp(enemyLevel, towerLevel) {
   const baseWaveXp = 15 + enemyLevel * 5;
   const levelDiff = enemyLevel - towerLevel;
-  const multiplier = Math.max(0.1, Math.pow(1.21, levelDiff));
+
+  if (levelDiff <= 0) {
+    const penaltyMult = Math.max(0.3, 1 + levelDiff * 0.02);
+    return Math.max(1, Math.round(baseWaveXp * penaltyMult));
+  }
+
+  let effectiveDiff;
+  if (levelDiff <= 30) {
+    // Normal logarithmic scaling up to +30 gap
+    effectiveDiff = 26 * Math.log(1 + levelDiff / 26);
+  } else {
+    // Hard logarithmic taper past +30 (smoothly anchored at gap 30)
+    const baseAt30 = 26 * Math.log(1 + 30 / 26); // ~19.95
+    const slopeAt30 = 26 / 56;                  // ~0.464
+    const taperStrength = 3.0;
+
+    effectiveDiff = baseAt30 + taperStrength * Math.log(1 + (slopeAt30 / taperStrength) * (levelDiff - 30));
+  }
+
+  const multiplier = Math.pow(1.21, effectiveDiff);
+
   return Math.max(1, Math.round(baseWaveXp * multiplier));
 }
 
@@ -826,21 +917,70 @@ function awardWaveXpToDeployedUnits(enemyLevel) {
     0,
   );
 
-  for (const unit of deployed) {
-    const baseEarnedXp = Math.max(
-      1,
-      Math.round(calculateWaveXp(enemyLevel, unit.level)),
-    );
+  const techMult =
+    typeof getTechWaveExpMultiplier === "function"
+      ? getTechWaveExpMultiplier()
+      : 1;
 
+  // Base XP pool assumes a full 6-slot deployment
+  const TOTAL_SLOTS = 6;
+  const singleBaseWaveXp = 15 + enemyLevel * 5;
+  const unitBaseShare = (singleBaseWaveXp * TOTAL_SLOTS) / deployed.length;
+
+  // Target share with 90% forgiveness buffer
+  const targetShare = (1 / deployed.length) * 0.9;
+  const CLIFF_THRESHOLD = 0.25; // 25% of target share cutoff
+
+  for (const unit of deployed) {
+    const levelDiff = enemyLevel - unit.level;
+
+    // Calculate level difference multiplier
+    let mult = 1.0;
+    if (levelDiff <= 0) {
+      mult = Math.max(0.1, 1 + levelDiff * 0.05);
+    } else {
+      let effectiveDiff;
+      if (levelDiff <= 30) {
+        effectiveDiff = 26 * Math.log(1 + levelDiff / 26);
+      } else {
+        const baseAt30 = 26 * Math.log(1 + 30 / 26);
+        const slopeAt30 = 26 / 56;
+        effectiveDiff =
+          baseAt30 + 3.0 * Math.log(1 + (slopeAt30 / 3.0) * (levelDiff - 30));
+      }
+      mult = Math.pow(1.21, effectiveDiff);
+    }
+
+    const rawBaseXp = Math.max(1, Math.round(unitBaseShare * mult));
+
+    const damageShare =
+      totalWaveDamage > 0 ? (unit.waveDamage || 0) / totalWaveDamage : 0;
+
+    // Piecewise Contribution Scaling (Plateau & Cliff)
+    const rawRatio = Math.min(1.0, damageShare / targetShare);
+    let contributionRatio = 0;
+
+    if (rawRatio >= CLIFF_THRESHOLD) {
+      // Plateau (25% to 100% target share): Scales from 50% to 100% base XP
+      const progress = (rawRatio - CLIFF_THRESHOLD) / (1 - CLIFF_THRESHOLD);
+      contributionRatio = 0.50 + 0.50 * progress;
+    } else {
+      // Cliff (0% to 25% target share): Drops quadratically from 50% down to 0%
+      const cliffProgress = rawRatio / CLIFF_THRESHOLD;
+      contributionRatio = 0.50 * Math.pow(cliffProgress, 2);
+    }
+
+    const baseEarnedXp = Math.round(rawBaseXp * contributionRatio);
+
+    // Bonus XP for carrying damage
     let damageBonusXp = 0;
     if (totalWaveDamage > 0 && (unit.waveDamage || 0) > 0) {
-      const damageShare = unit.waveDamage / totalWaveDamage;
       damageBonusXp = Math.round(
-        baseEarnedXp * damageShare * deployed.length * 0.5,
+        rawBaseXp * damageShare * deployed.length * 0.5,
       );
     }
 
-    const earnedXp = baseEarnedXp + damageBonusXp;
+    const earnedXp = Math.round((baseEarnedXp + damageBonusXp) * techMult);
     unit.xp = (unit.xp ?? 0) + earnedXp;
 
     unit.stageXpGained = (unit.stageXpGained || 0) + earnedXp;
@@ -1038,6 +1178,7 @@ function getAvailableUnitPool(category = "Main") {
     if (techLevel >= 2) currentRearPool.push(...rearPoolUpgrade2);
     if (techLevel >= 3) currentRearPool.push(...rearPoolUpgrade3);
     if (techLevel >= 4) currentRearPool.push(...rearPoolUpgrade4);
+    if (techLevel >= 5) currentRearPool.push(...rearPoolUpgrade5);
     return currentRearPool;
   }
 
@@ -1046,7 +1187,7 @@ function getAvailableUnitPool(category = "Main") {
   if (techLevel >= 2) currentPool.push(...poolUpgrade2);
   if (techLevel >= 3) currentPool.push(...poolUpgrade3);
   if (techLevel >= 4) currentPool.push(...poolUpgrade4);
-
+  if (techLevel >= 5) currentPool.push(...poolUpgrade5);
   return currentPool;
 }
 
@@ -1056,17 +1197,22 @@ function getRandomUnitTypeByCategory(category = "Main") {
     return category === "Rear" ? "base_battery" : "cannon";
   }
 
-  let totalWeight = 0;
+  // Count towers per rarity tier in the current pool
+  const rarityCounts = {};
   for (const typeKey of pool) {
     const rarity = unitTypes[typeKey]?.rarity || "Common";
-    totalWeight += RARITY_WEIGHTS[rarity] ?? 10;
+    rarityCounts[rarity] = (rarityCounts[rarity] || 0) + 1;
+  }
+
+  let totalWeight = 0;
+  for (const typeKey of pool) {
+    totalWeight += getEffectiveTowerWeight(typeKey, pool, rarityCounts);
   }
 
   let roll = Math.random() * totalWeight;
 
   for (const typeKey of pool) {
-    const rarity = unitTypes[typeKey]?.rarity || "Common";
-    const weight = RARITY_WEIGHTS[rarity] ?? 10;
+    const weight = getEffectiveTowerWeight(typeKey, pool, rarityCounts);
     if (roll < weight) {
       return typeKey;
     }
@@ -1075,6 +1221,7 @@ function getRandomUnitTypeByCategory(category = "Main") {
 
   return pool[0];
 }
+
 function buyRandomUnit(category = "Main") {
   if (isBattleRunning()) return;
 
@@ -1206,12 +1353,24 @@ function upgradeUnit(targetId, duplicateId) {
   gold -= cost;
   inventory.splice(duplicateIndex, 1);
 
+  // Check if range is below cap (6)
+  const canUpgradeRange = (target.range ?? 0) < 6;
+
   const roll = Math.random();
   let stat;
 
-  if (roll < 0.6) stat = "damage";
-  else if (roll < 0.98) stat = "fireRate";
-  else stat = "range";
+  if (roll < 0.6) {
+    stat = "damage";
+  } else if (roll < 0.98) {
+    stat = "fireRate";
+  } else {
+    // If range is 6 or higher, re-roll between damage and fireRate
+    if (canUpgradeRange) {
+      stat = "range";
+    } else {
+      stat = Math.random() < (0.6 / 0.98) ? "damage" : "fireRate";
+    }
+  }
 
   const rarityMult = rarityMultipliers[getUnitData(target).rarity] || 1.0;
 
@@ -1225,7 +1384,7 @@ function upgradeUnit(targetId, duplicateId) {
       Number((target.baseFireRate * 0.35 * rarityMult).toFixed(2)),
     ),
 
-    // +1 Range for Common/Uncommon, +2 Range for Rare/Epic/Legendary
+    // +1 Range for < legendary and +2 for >= legendary>
     range: rarityMult >= 2.2 ? 2 : 1,
   };
 
@@ -2537,7 +2696,6 @@ function selectStage(stageId) {
   updateUI();
 }
 
-// Fixed: Isolated Challenge Mode vs Campaign Mode Progression
 function handleWaveCleared() {
   const stage = getSelectedStage();
 
@@ -2555,13 +2713,14 @@ function handleWaveCleared() {
     const isFirstClear = !clearedChallengeStageIds.has(stage.id);
     let mainStageGold = 0;
     let earnedTicket = false;
+    const stEarned = stage.stReward || 20;
 
     if (isFirstClear) {
       clearedChallengeStageIds.add(stage.id);
 
       mainStageGold = stage.reward;
       gold += mainStageGold;
-      st += stage.stReward || 20;
+      st += stEarned;
 
       let ticketItem = warehouse.find((item) => item.id === "challenge_ticket");
       if (ticketItem) {
@@ -2597,6 +2756,24 @@ function handleWaveCleared() {
       kills: unit.stageKills || 0,
     }));
 
+    const totalGoldFromStage = stageEnemyGoldEarned + mainStageGold;
+    const totalStFromStage = stEarned + stageWaveStEarned;
+
+    // Track Session Rewards
+    if (autoRepeatEnabled) {
+      autoRepeatSessionStats.runsCompleted++;
+      autoRepeatSessionStats.totalGold += totalGoldFromStage;
+      autoRepeatSessionStats.totalSt += totalStFromStage;
+      if (earnedTicket) autoRepeatSessionStats.ticketsEarned++;
+    } else {
+      autoRepeatSessionStats = {
+        runsCompleted: 1,
+        totalGold: totalGoldFromStage,
+        totalSt: totalStFromStage,
+        ticketsEarned: earnedTicket ? 1 : 0,
+      };
+    }
+
     saveCampaignProgress();
     updateUI();
     renderStageSelect();
@@ -2608,12 +2785,13 @@ function handleWaveCleared() {
       enemyGold: stageEnemyGoldEarned,
       waveGold: 0,
       clearGold: mainStageGold,
-      totalGold: stageEnemyGoldEarned + mainStageGold,
-      stEarned: stage.stReward || 20,
+      totalGold: totalGoldFromStage,
+      stEarned: stEarned,
       waveStEarned: stageWaveStEarned,
       isFirstClear: isFirstClear,
       earnedTicket: earnedTicket,
       towerStats: towerStats,
+      sessionStats: { ...autoRepeatSessionStats },
     });
 
     resetStageCounters();
@@ -2638,8 +2816,9 @@ function handleWaveCleared() {
   stageEntered = true;
   startWaveAvailable = wave < stage.waves.length;
 
+  // Intermediate Wave Cleared
   if (wave < stage.waves.length) {
-    enemyStatus.textContent = `Stage ${stage.id} — Wave ${wave} cleared. Start the next wave when ready.`;
+    enemyStatus.textContent = `Stage ${stage.id} — Wave ${wave} cleared.`;
     addLog(
       `Wave ${wave}/${stage.waves.length} cleared! +${minorWaveGold} wave gold.`,
     );
@@ -2647,9 +2826,25 @@ function handleWaveCleared() {
     saveCampaignProgress();
     updateUI();
     renderStageSelect();
+
+    if (
+      typeof isAutoWaveUnlocked === "function" &&
+      isAutoWaveUnlocked() &&
+      autoStartWaveEnabled
+    ) {
+      if (autoWaveTimeout !== null) clearTimeout(autoWaveTimeout);
+
+      autoWaveTimeout = setTimeout(() => {
+        autoWaveTimeout = null;
+        if (stageEntered && startWaveAvailable && !isBattleRunning()) {
+          startWave();
+        }
+      }, autoStageDelay);
+    }
     return;
   }
 
+  // Final Wave / World Cleared
   if (typeof stopBattle === "function") {
     stopBattle();
   }
@@ -2691,6 +2886,8 @@ function handleWaveCleared() {
 
   const totalGoldFromStage =
     stageEnemyGoldEarned + stageWaveGoldEarned + mainStageGold;
+  const totalStFromStage = stEarned + stageWaveStEarned;
+
   stageClearCounts[stage.id] = clearCount + 1;
 
   let unlockedStageId = null;
@@ -2716,6 +2913,27 @@ function handleWaveCleared() {
     kills: unit.stageKills || 0,
   }));
 
+  // Track Session Rewards
+  if (autoRepeatEnabled) {
+    autoRepeatSessionStats.runsCompleted++;
+    autoRepeatSessionStats.totalGold += totalGoldFromStage;
+    autoRepeatSessionStats.totalSt += totalStFromStage;
+  } else {
+    autoRepeatSessionStats = {
+      runsCompleted: 1,
+      totalGold: totalGoldFromStage,
+      totalSt: totalStFromStage,
+      ticketsEarned: 0,
+    };
+  }
+
+  if (unlockedNewStage) {
+    unlockedStageIndex = stage.index + 1;
+    unlockedStageId = stages[unlockedStageIndex].id;
+    selectedStageId = unlockedStageId;
+    currentStagePage = Math.floor(unlockedStageIndex / stagesPerPage);
+  }
+
   saveCampaignProgress();
   updateUI();
   renderStageSelect();
@@ -2733,9 +2951,46 @@ function handleWaveCleared() {
     isFirstClear: isFirstClear,
     unlockedStageId: unlockedStageId,
     towerStats: towerStats,
+    sessionStats: { ...autoRepeatSessionStats },
   });
 
   resetStageCounters();
+
+  // Auto-Repeat Execution & Counter Check
+  if (
+    typeof isAutoRepeatUnlocked === "function" &&
+    isAutoRepeatUnlocked() &&
+    autoRepeatEnabled
+  ) {
+    let shouldRepeat = false;
+
+    if (autoRepeatCount === 0) {
+      shouldRepeat = true; // Unlimited runs
+    } else if (autoRepeatRemaining > 1) {
+      autoRepeatRemaining--;
+      shouldRepeat = true;
+    } else {
+      autoRepeatRemaining = 0;
+      autoRepeatEnabled = false;
+      autoStartWaveEnabled = false;
+      addLog("🔁 Auto-Repeat completed all target runs!");
+      if (typeof renderAutoWaveControl === "function") renderAutoWaveControl();
+    }
+
+    if (shouldRepeat) {
+      setTimeout(() => {
+        enterStage();
+      }, autoWorldDelay);
+    } else {
+      // Reset session stats when target runs finish
+      autoRepeatSessionStats = {
+        runsCompleted: 0,
+        totalGold: 0,
+        totalSt: 0,
+        ticketsEarned: 0,
+      };
+    }
+  }
 }
 
 function renderStageSelect() {
@@ -2929,6 +3184,97 @@ function renderStageSelect() {
     buttonGroup.appendChild(exitButton);
   }
 
+  // Render Auto-Repeat Option if unlocked
+  if (typeof isAutoRepeatUnlocked === "function" && isAutoRepeatUnlocked()) {
+    const autoRepeatRow = document.createElement("div");
+    const isActivelyRepeating =
+      autoRepeatEnabled && (stageEntered || isBattleRunning());
+
+    // Apply state class: '.running' when in an active run, '.active' when enabled on standby
+    if (isActivelyRepeating) {
+      autoRepeatRow.className = "auto-repeat-row running";
+    } else if (autoRepeatEnabled) {
+      autoRepeatRow.className = "auto-repeat-row active";
+    } else {
+      autoRepeatRow.className = "auto-repeat-row";
+    }
+
+    const repeatCb = document.createElement("input");
+    repeatCb.type = "checkbox";
+    repeatCb.id = "toggle-auto-repeat-checkbox";
+    repeatCb.checked = autoRepeatEnabled;
+
+    const repeatLabel = document.createElement("label");
+    repeatLabel.htmlFor = "toggle-auto-repeat-checkbox";
+
+    const countInput = document.createElement("input");
+    countInput.type = "number";
+    countInput.min = "0";
+    countInput.value = String(autoRepeatCount);
+    countInput.title = "0 = Unlimited repeats";
+
+    const hint = document.createElement("small");
+
+    const updateDisplay = () => {
+      const activeRun =
+        autoRepeatEnabled && (stageEntered || isBattleRunning());
+
+      if (activeRun) {
+        autoRepeatRow.className = "auto-repeat-row running";
+        repeatLabel.textContent = "Repeating:";
+        countInput.style.display = "none";
+
+        const remainingStr =
+          autoRepeatCount === 0
+            ? "∞"
+            : `${autoRepeatRemaining > 0 ? autoRepeatRemaining : autoRepeatCount}`;
+        hint.textContent = `${remainingStr} left`;
+      } else {
+        autoRepeatRow.className = autoRepeatEnabled
+          ? "auto-repeat-row active"
+          : "auto-repeat-row";
+        repeatLabel.textContent = "Auto-Repeat World:";
+        countInput.style.display = "inline-block";
+        hint.textContent =
+          autoRepeatCount === 0
+            ? "(∞)"
+            : autoRepeatCount === 1
+              ? `(${autoRepeatCount} repeat)`
+              : `(${autoRepeatCount} repeats)`;
+      }
+    };
+
+    repeatCb.addEventListener("change", (e) => {
+      autoRepeatEnabled = e.target.checked;
+
+      // Sync Auto-Start Wave with Auto-Repeat state
+      autoStartWaveEnabled = autoRepeatEnabled;
+
+      if (autoRepeatEnabled) {
+        autoRepeatRemaining = autoRepeatCount;
+      } else {
+        autoRepeatRemaining = 0;
+      }
+
+      updateDisplay();
+      if (typeof renderAutoWaveControl === "function") renderAutoWaveControl();
+      saveCampaignProgress();
+    });
+
+    countInput.addEventListener("input", (e) => {
+      const val = Math.max(0, parseInt(e.target.value) || 0);
+      autoRepeatCount = val;
+      autoRepeatRemaining = val;
+      updateDisplay();
+      saveCampaignProgress();
+    });
+
+    updateDisplay();
+
+    autoRepeatRow.append(repeatCb, repeatLabel, countInput, hint);
+    detailsMain.appendChild(autoRepeatRow);
+  }
+
   stageDetails.replaceChildren(detailsMain, buttonGroup);
 }
 
@@ -2944,11 +3290,32 @@ function enterStage() {
 
   resetStageCounters();
 
+  // Ensure Auto-Start is on if Auto-Repeat is active
+  if (autoRepeatEnabled) {
+    autoStartWaveEnabled = true;
+  }
+
   enemyStatus.textContent = `Stage ${stage.id} entered. Ready to start Wave ${wave + 1}.`;
 
   saveCampaignProgress();
   renderStageSelect();
   updateUI();
+
+  // Automatically start Wave 1 on stage entry if Auto-Start is unlocked & enabled
+  if (
+    typeof isAutoWaveUnlocked === "function" &&
+    isAutoWaveUnlocked() &&
+    autoStartWaveEnabled
+  ) {
+    if (autoWaveTimeout !== null) clearTimeout(autoWaveTimeout);
+
+    autoWaveTimeout = setTimeout(() => {
+      autoWaveTimeout = null;
+      if (stageEntered && startWaveAvailable && !isBattleRunning()) {
+        startWave();
+      }
+    }, autoStageDelay);
+  }
 }
 
 function startWave() {
@@ -2994,15 +3361,28 @@ function exitStage() {
 
   if (!confirmed) return;
 
+  // 1. Cancel queued timers & auto-repeat loops
+  if (autoWaveTimeout !== null) {
+    clearTimeout(autoWaveTimeout);
+    autoWaveTimeout = null;
+  }
+
+  if (typeof cancelAutoRepeat === "function") {
+    cancelAutoRepeat();
+  }
+
+  // 2. Stop running battle loop & clear wave entities
   if (typeof stopBattle === "function") {
     stopBattle();
   }
 
+  // 3. Reset stage state variables
   stageEntered = false;
   startWaveAvailable = false;
   wave = 0;
   baseHealth = maxBaseHealth;
 
+  // 4. Reset UI & log feedback
   enemyStatus.textContent = `Exited Stage ${selectedStageId}. Ready to re-enter or choose another stage.`;
   addLog(`Exited Stage ${selectedStageId} and returned to base.`);
 
@@ -3063,21 +3443,35 @@ function openStageClearedPopup(summary) {
   const popup = document.createElement("div");
   popup.className = "unit-popup stage-clear-popup";
 
+  const isMultiRun =
+    summary.sessionStats && summary.sessionStats.runsCompleted > 1;
+
   const title = document.createElement("h2");
   title.className = "stage-clear-title";
-  title.textContent = `🎉 Stage ${summary.stageId} Cleared!`;
+  title.textContent = isMultiRun
+    ? `🔁 Auto-Repeat Run #${summary.sessionStats.runsCompleted} Cleared!`
+    : `🎉 Stage ${summary.stageId} Cleared!`;
 
   const subtitle = document.createElement("p");
   subtitle.className = "unit-popup-subtitle";
   subtitle.textContent = summary.stageName;
 
-  const totalSt = summary.stEarned + (summary.waveStEarned || 0);
+  // Calculate ST and Gold (Session accumulative vs single run)
+  const singleRunSt = summary.stEarned + (summary.waveStEarned || 0);
+  const displayTotalGold = isMultiRun
+    ? summary.sessionStats.totalGold
+    : summary.totalGold;
+  const displayTotalSt = isMultiRun
+    ? summary.sessionStats.totalSt
+    : singleRunSt;
 
   const rewardsBox = document.createElement("div");
   rewardsBox.className = "stage-rewards-box";
 
   const rewardHeading = document.createElement("strong");
-  rewardHeading.textContent = `Total Rewards: +${summary.totalGold} Gold | +${totalSt} ST`;
+  rewardHeading.textContent = isMultiRun
+    ? `Session Total (${summary.sessionStats.runsCompleted} Runs): +${displayTotalGold.toLocaleString()} Gold | +${displayTotalSt} ST`
+    : `Total Rewards: +${summary.totalGold.toLocaleString()} Gold | +${singleRunSt} ST`;
   rewardsBox.appendChild(rewardHeading);
 
   const rewardsList = document.createElement("ul");
@@ -3090,13 +3484,19 @@ function openStageClearedPopup(summary) {
   }
 
   rewardsList.appendChild(
-    createRewardItem(`👾 Enemy Defeat Gold: +${summary.enemyGold}`),
+    createRewardItem(
+      `👾 Enemy Defeat Gold: +${summary.enemyGold.toLocaleString()}`,
+    ),
   );
   rewardsList.appendChild(
-    createRewardItem(`🌊 Wave Clear Gold: +${summary.waveGold}`),
+    createRewardItem(
+      `🌊 Wave Clear Gold: +${summary.waveGold.toLocaleString()}`,
+    ),
   );
   rewardsList.appendChild(
-    createRewardItem(`🏆 Stage Clear Bonus Gold: +${summary.clearGold}`),
+    createRewardItem(
+      `🏆 Stage Clear Bonus Gold: +${summary.clearGold.toLocaleString()}`,
+    ),
   );
   rewardsList.appendChild(
     createRewardItem(`⭐ Stage Clear Bonus ST: +${summary.stEarned}`),
@@ -3108,8 +3508,16 @@ function openStageClearedPopup(summary) {
     );
   }
 
-  if (summary.earnedTicket) {
-    const ticketText = createRewardItem("🎟️ Earned 1 Challenge Ticket!");
+  // Display tickets earned (Session aggregate if multi-run)
+  const displayTickets = isMultiRun
+    ? summary.sessionStats.ticketsEarned
+    : summary.earnedTicket
+      ? 1
+      : 0;
+  if (displayTickets > 0) {
+    const ticketText = createRewardItem(
+      `🎟️ Earned ${displayTickets} Challenge Ticket${displayTickets > 1 ? "s" : ""}!`,
+    );
     ticketText.className = "bonus-text";
     rewardsList.appendChild(ticketText);
   }
@@ -3162,10 +3570,9 @@ function openStageClearedPopup(summary) {
     }
 
     details.appendChild(statsList);
-    popup.appendChild(rewardsBox);
-    popup.appendChild(details);
+    popup.append(title, subtitle, rewardsBox, details);
   } else {
-    popup.appendChild(rewardsBox);
+    popup.append(title, subtitle, rewardsBox);
   }
 
   const footer = document.createElement("div");
@@ -3184,20 +3591,16 @@ function openStageClearedPopup(summary) {
   continueBtn.className = "stage-clear-continue-btn";
   continueBtn.textContent = "Continue";
 
-  continueBtn.addEventListener("click", () => {
+  const closeHandler = () => {
     if (dontShowCheckbox.checked) {
       setShowClearPopup(false);
     }
     overlay.remove();
-  });
+  };
 
+  continueBtn.addEventListener("click", closeHandler);
   overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) {
-      if (dontShowCheckbox.checked) {
-        setShowClearPopup(false);
-      }
-      overlay.remove();
-    }
+    if (event.target === overlay) closeHandler();
   });
 
   footer.append(dontShowLabel, continueBtn);
@@ -3341,6 +3744,17 @@ function openPoolInfoModal(category = "Main") {
   document.getElementById("pool-modal-overlay")?.remove();
 
   const pool = getAvailableUnitPool(category);
+  const isFocusUnlocked =
+    typeof getTechNodeLevel === "function" &&
+    getTechNodeLevel("eco_focus_pool") >= 1;
+
+  const activeFocusedKey = category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
+
+  const rarityCounts = {};
+  for (const typeKey of pool) {
+    const rarity = unitTypes[typeKey]?.rarity || "Common";
+    rarityCounts[rarity] = (rarityCounts[rarity] || 0) + 1;
+  }
 
   let totalWeight = 0;
   const rarityGroups = {};
@@ -3350,7 +3764,8 @@ function openPoolInfoModal(category = "Main") {
     if (!data) continue;
 
     const rarity = data.rarity || "Common";
-    const weight = RARITY_WEIGHTS[rarity] ?? 10;
+    const weight = getEffectiveTowerWeight(typeKey, pool, rarityCounts);
+    const isFocused = isFocusUnlocked && typeKey === activeFocusedKey;
 
     totalWeight += weight;
 
@@ -3362,7 +3777,7 @@ function openPoolInfoModal(category = "Main") {
     }
 
     rarityGroups[rarity].totalRarityWeight += weight;
-    rarityGroups[rarity].towers.push({ ...data, weight });
+    rarityGroups[rarity].towers.push({ ...data, typeKey, weight, isFocused });
   }
 
   const overlay = document.createElement("div");
@@ -3390,8 +3805,6 @@ function openPoolInfoModal(category = "Main") {
   const container = document.createElement("div");
   container.className = "pool-group-container";
 
-  const rarityOrder = ["Legendary", "Epic", "Rare", "Uncommon", "Common"];
-
   for (const rarity of rarityOrder) {
     if (!rarityGroups[rarity]) continue;
 
@@ -3413,7 +3826,46 @@ function openPoolInfoModal(category = "Main") {
     for (const tower of group.towers) {
       const towerChance = ((tower.weight / totalWeight) * 100).toFixed(1);
       const item = document.createElement("li");
-      item.innerHTML = `<strong>${tower.name}</strong> (${towerChance}%)`;
+      item.style.display = "flex";
+      item.style.justifyContent = "space-between";
+      item.style.alignItems = "center";
+      item.style.marginBottom = "4px";
+
+      const textSpan = document.createElement("span");
+      if (tower.isFocused) {
+        textSpan.innerHTML = `<strong style="color: #f59e0b;">⭐ ${tower.name}</strong> <span style="color:#f59e0b">(${towerChance}%)</span>`;
+      } else {
+        textSpan.innerHTML = `<strong>${tower.name}</strong> (${towerChance}%)`;
+      }
+      item.appendChild(textSpan);
+
+      if (isFocusUnlocked) {
+        const focusBtn = document.createElement("button");
+        focusBtn.textContent = tower.isFocused ? "Unfocus" : "Focus";
+        focusBtn.style.padding = "2px 8px";
+        focusBtn.style.fontSize = "0.75rem";
+        focusBtn.style.marginLeft = "12px";
+        focusBtn.style.cursor = "pointer";
+
+        if (tower.isFocused) {
+          focusBtn.style.borderColor = "#f59e0b";
+          focusBtn.style.color = "#f59e0b";
+          focusBtn.style.background = "#451a03";
+        }
+
+        focusBtn.addEventListener("click", () => {
+          if (category === "Rear") {
+            focusedRearTowerKey = tower.isFocused ? null : tower.typeKey;
+          } else {
+            focusedMainTowerKey = tower.isFocused ? null : tower.typeKey;
+          }
+          saveCampaignProgress();
+          openPoolInfoModal(category);
+        });
+
+        item.appendChild(focusBtn);
+      }
+
       list.appendChild(item);
     }
 
@@ -3552,8 +4004,12 @@ function updateUI() {
     renderShopPoolInfo();
   }
 
-  if (typeof renderStageSelect === "function") {
+  if (typeof renderStageSelect === "function" && !isBattleRunning()) {
     renderStageSelect();
+  }
+
+  if (typeof renderAutoWaveControl === "function") {
+    renderAutoWaveControl();
   }
 }
 
@@ -3649,9 +4105,14 @@ document
     if (stageEntered || isBattleRunning()) return;
     currentCampaignTabMode = "campaign";
     document.getElementById("campaign-mode-tab-btn")?.classList.add("active");
-    document
-      .getElementById("challenge-mode-tab-btn")
-      ?.classList.remove("active");
+    document.getElementById("challenge-mode-tab-btn")?.classList.remove("active");
+
+    // Jump to the page of the selected Campaign stage
+    const selected = stages.find((s) => s.id === selectedStageId);
+    if (selected) {
+      currentStagePage = Math.floor(selected.index / stagesPerPage);
+    }
+
     renderStageSelect();
   });
 
@@ -3661,9 +4122,14 @@ document
     if (stageEntered || isBattleRunning()) return;
     currentCampaignTabMode = "challenge";
     document.getElementById("challenge-mode-tab-btn")?.classList.add("active");
-    document
-      .getElementById("campaign-mode-tab-btn")
-      ?.classList.remove("active");
+    document.getElementById("campaign-mode-tab-btn")?.classList.remove("active");
+
+    // Jump to the page of the selected Challenge stage
+    const selected = challengeStages.find((s) => s.id === selectedChallengeStageId);
+    if (selected) {
+      currentStagePage = Math.floor(selected.index / stagesPerPage);
+    }
+
     renderStageSelect();
   });
 
@@ -3768,6 +4234,11 @@ document.addEventListener("DOMContentLoaded", () => {
       renderTechTree();
     });
   }
+});
+
+startWaveButton?.addEventListener("click", () => {
+  cancelAutoRepeat();
+  startWave();
 });
 
 /* ==========================================================================

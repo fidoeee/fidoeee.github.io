@@ -691,6 +691,92 @@ body.no-scroll {
   overflow: hidden !important;
 }
 
+/* AUTO REPEAT ROW STYLING */
+
+/* Base Container */
+.auto-repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #1d2430;
+  border: 1px solid #384253; /* Default Grey Outline */
+  border-radius: 6px;
+  width: fit-content;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.auto-repeat-row label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e8ecf2;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-repeat-row input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: #f59e0b;
+  width: 16px;
+  height: 16px;
+}
+
+.auto-repeat-row input[type="number"] {
+  width: 58px;
+  padding: 4px 6px;
+  background: #151922;
+  border: 1px solid #53627a;
+  border-radius: 4px;
+  color: #f4f6fa;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: border-color 0.2s ease;
+}
+
+.auto-repeat-row input[type="number"]:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px #f59e0b;
+}
+
+.auto-repeat-row small {
+  color: #9eacbf;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Standby Enabled State (Orange Outline) */
+.auto-repeat-row.active {
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.25);
+}
+
+.auto-repeat-row.active input[type="number"] {
+  border-color: #f59e0b;
+}
+
+/* Actively Repeating State (Cyan Pulse / Glowing Outline) */
+.auto-repeat-row.running {
+  border-color: #38bdf8; /* Glowing Cyan Outline */
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+  background: #172436;
+}
+
+.auto-repeat-row.running label {
+  color: #38bdf8;
+}
+
+.auto-repeat-row.running small {
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.auto-repeat-row.running input[type="checkbox"] {
+  accent-color: #38bdf8;
+}
+
 /* ==========================================================================
    6. INVENTORY & WAREHOUSE
    ========================================================================== */
@@ -791,6 +877,21 @@ body.no-scroll {
 .unit-card.legendary {
   border-color: #f59e0b;
   box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+}
+
+/* Mythic Rarity Outlines and Text */
+.unit-card.mythic {
+  border-color: #00f0ff;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+}
+
+.unit-popup.mythic {
+  border: 2px solid #00f0ff;
+  box-shadow: 0 0 28px rgba(0, 240, 255, 0.45);
+}
+
+.rarity-title.mythic {
+  color: #00f0ff;
 }
 
 .unit-card strong {
@@ -1832,6 +1933,35 @@ body.no-scroll {
   vertical-align: middle;
 }
 
+/* Ensure the button bar uses flex layout */
+.slot-buttons,
+.battle-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Auto-Start Toggle Styling */
+.auto-start-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto; /* Pushes element flush to the right */
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.auto-start-toggle-label input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: #f59e0b; /* Matches tech accent theme */
+  width: 16px;
+  height: 16px;
+}
+
 /* ==========================================================================
    11. ENEMY LIST
    ========================================================================== */
@@ -2020,6 +2150,102 @@ body.no-scroll {
   background: #3b82f6;
   border-radius: inherit;
   transition: width 150ms ease;
+}
+
+/* STACKED REWARDS POPUP STYLES */
+
+.stacked-rewards-box {
+  background: #151922;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 14px 0;
+}
+
+.stacked-rewards-heading {
+  display: block;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #2d3748;
+  padding-bottom: 4px;
+}
+
+.stacked-reward-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stacked-reward-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #1e2430;
+  border: 1px solid #384253;
+  border-radius: 6px;
+  transition: border-color 0.15s ease;
+}
+
+.stacked-reward-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.stacked-reward-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.stacked-reward-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.stacked-reward-text strong {
+  font-size: 0.9rem;
+  color: #f3f4f6;
+}
+
+.stacked-reward-text small {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.stacked-reward-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+/* Resource specific highlights */
+.stacked-reward-item.gold-reward {
+  border-color: #f59e0b;
+}
+
+.stacked-reward-item.gold-reward .stacked-reward-value {
+  color: #fbbf24;
+}
+
+.stacked-reward-item.st-reward {
+  border-color: #3b82f6;
+}
+
+.stacked-reward-item.st-reward .stacked-reward-value {
+  color: #60a5fa;
+}
+
+.stacked-reward-item.ticket-reward {
+  border-color: #a855f7;
+}
+
+.stacked-reward-item.ticket-reward .stacked-reward-value {
+  color: #c084fc;
 }
 
 /* ==========================================================================

@@ -398,6 +398,72 @@ const unitTypes = {
     sellPrice: 220,
   },
 
+  // ==========================================
+  // TIER 5 UNLOCKS
+  // ==========================================
+  hyper_beam: {
+    name: "Hyperion Beam",
+    category: "Main",
+    rarity: "Legendary",
+    damage: 950,
+    fireRate: 3.5,
+    range: 9,
+    sellPrice: 350,
+  },
+  tachyon_lance: {
+    name: "Tachyon Lance",
+    category: "Main",
+    rarity: "Legendary",
+    damage: 350,
+    fireRate: 12,
+    range: 7,
+    sellPrice: 360,
+  },
+  titan_battery: {
+    name: "Titan Battery",
+    category: "Main",
+    rarity: "Legendary",
+    damage: 1300,
+    fireRate: 4,
+    range: 8,
+    sellPrice: 380,
+  },
+  quantum_array: {
+    name: "Quantum Array",
+    category: "Main",
+    rarity: "Legendary",
+    damage: 220,
+    fireRate: 25,
+    range: 6,
+    sellPrice: 370,
+  },
+  singularity_cannon: {
+    name: "Singularity Cannon",
+    category: "Main",
+    rarity: "Mythic",
+    damage: 3600,
+    fireRate: 2.5,
+    range: 10,
+    sellPrice: 600,
+  },
+  chrono_accelerator: {
+    name: "Chrono Accelerator",
+    category: "Main",
+    rarity: "Mythic",
+    damage: 1600,
+    fireRate: 6,
+    range: 12,
+    sellPrice: 650,
+  },
+  dissonance_array: {
+    name: "Dissonance Array",
+    category: "Main",
+    rarity: "Mythic",
+    damage: 140,
+    fireRate: 80,
+    range: 6,
+    sellPrice: 700,
+  },
 
   // ==========================================
   // BASE BACKLINE TOWERS
@@ -489,7 +555,7 @@ const unitTypes = {
     category: "Rear",
     rarity: "Legendary",
     damage: 45,
-    fireRate: 18.0, // Ultra-high fire-rate rear sentry (crowd control stream)
+    fireRate: 45,
     range: 20,
     sellPrice: 180,
   },
@@ -501,5 +567,34 @@ const unitTypes = {
     fireRate: 0.4,
     range: 20,
     sellPrice: 150,
+  },
+
+  // TIER 5 UNLOCKS (Stage 6-10)
+  base_apocalypse_array: {
+    name: "Apocalypse Battery",
+    category: "Rear",
+    rarity: "Legendary",
+    damage: 14000,
+    fireRate: 0.35,
+    range: 20,
+    sellPrice: 240,
+  },
+  base_doomsday_silo: {
+    name: "Doomsday Silo",
+    category: "Rear",
+    rarity: "Mythic",
+    damage: 25000,
+    fireRate: 0.25,
+    range: 20,
+    sellPrice: 750,
+  },
+  base_aegis_generator: {
+    name: "Aegis Core Array",
+    category: "Rear",
+    rarity: "Mythic",
+    damage: 1200,
+    fireRate: 10.0,
+    range: 20,
+    sellPrice: 700,
   },
 };
