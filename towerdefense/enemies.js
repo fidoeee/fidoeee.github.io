@@ -11,11 +11,11 @@ const enemyTypes = {
   // --- BASIC & SWARM UNITS ---
   flood_drone: {
     name: "Swarm Drone",
-    health: 5, // Low HP so fire-rate towers like Rotary Minigun 1-shot them
-    speed: 5, // High speed rush
-    reward: 0.05, // Low reward prevents gold exploitation on large waves
-    damage: 5, // Low leak damage per unit
-    armor: 0, // 0 Armor ensures minigun/rapid base damage pierces
+    health: 5,
+    speed: 5,
+    reward: 0.05,
+    damage: 5,
+    armor: 0,
   },
   basic: {
     name: "Basic Enemy",
@@ -53,7 +53,7 @@ const enemyTypes = {
     reward: 2,
     damage: 8,
     healAmount: 25,
-    healInterval: 2000, // Heals nearby allies every 2 seconds
+    healInterval: 2000,
   },
 
   // --- SPECIALIZED MINIONS & SUPPORT ---
@@ -75,7 +75,7 @@ const enemyTypes = {
     healInterval: 1500,
   },
 
-  // --- HEAVY REGENERATIVE UNITS (WORLD 5+) ---
+  // --- HEAVY REGENERATIVE UNITS ---
   regen_unit: {
     name: "Regenerator",
     health: 450,
@@ -84,7 +84,7 @@ const enemyTypes = {
     damage: 15,
     armor: 20,
     type: "self_healer",
-    selfHealAmount: 120, // High self-heal tick; requires burst DPS
+    selfHealAmount: 120,
     healInterval: 1200,
   },
   siphon_unit: {
@@ -95,12 +95,12 @@ const enemyTypes = {
     damage: 20,
     armor: 35,
     type: "dual_healer",
-    selfHealAmount: 80, // Self-heal tick
-    healAmount: 150, // Heals nearest wounded ally
+    selfHealAmount: 80,
+    healAmount: 150,
     healInterval: 1800,
   },
 
-  // --- EARLY BOSSES (WORLD 1 & 2) ---
+  // --- EARLY BOSSES ---
   miniboss1: {
     name: "Miniboss",
     health: 6000,
@@ -126,7 +126,7 @@ const enemyTypes = {
     armor: 30,
   },
 
-  // --- VARIED WORLD BOSSES (WORLD 3+) ---
+  // --- MID & LATE WORLD BOSSES ---
   juggernaut: {
     name: "Ironclad Juggernaut",
     health: 60000,
@@ -138,7 +138,7 @@ const enemyTypes = {
   blitz_boss: {
     name: "Speed Demon Prime",
     health: 39000,
-    speed: 0.70,
+    speed: 0.7,
     damage: 999,
     reward: 30,
     armor: 10,
@@ -157,34 +157,66 @@ const enemyTypes = {
   },
   fortress_core: {
     name: "Aegis Core Sentinel",
-    health: 80000,
+    health: 140000,
     speed: 0.1,
     damage: 999,
-    reward: 45,
-    armor: 60,
+    reward: 50,
+    armor: 120,
   },
   void_colossus: {
     name: "Void Colossus",
-    health: 120000,
-    speed: 0.18,
+    health: 260000,
+    speed: 0.15,
     damage: 999,
-    reward: 60,
-    armor: 70,
+    reward: 75,
+    armor: 160,
   },
   apex_overlord: {
     name: "Apex Vanguard Overlord",
-    health: 180000,
-    speed: 0.2,
+    health: 250000,
+    speed: 0.16,
+    damage: 999,
+    reward: 120,
+    armor: 220,
+  },
+  dread_titan: {
+    name: "Titan Dreadnought",
+    health: 500000,
+    speed: 0.12,
+    damage: 999,
+    reward: 180,
+    armor: 300,
+  },
+
+  // --- WORLD 10 MULTI-BOSS COMPONENTS ---
+  omega_titan_alpha: {
+    name: "Omega Core Titan Alpha",
+    health: 750000,
+    speed: 0.08,
+    damage: 999,
+    reward: 150,
+    armor: 3000,
+  },
+  omega_titan_beta: {
+    name: "Omega Core Titan Beta",
+    health: 600000,
+    speed: 0.0801,
+    damage: 999,
+    reward: 150,
+    armor: 10000,
+  },
+  omega_blitz_miniboss: {
+    name: "Vanguard Blitz Stalker",
+    health: 200000,
+    speed: 0.45,
     damage: 999,
     reward: 100,
-    armor: 90,
+    armor: 1000,
   },
 
   /* ==========================================================================
    Challenge Bosses
    ========================================================================== */
-
-  // --- DEDICATED SINGLE-TARGET CHALLENGE BOSSES (LEVELS 10–200) ---
   c_boss_1: {
     name: "Target C-010",
     level: 10,
@@ -323,7 +355,7 @@ const enemyTypes = {
   c_boss_15: {
     name: "Target C-150",
     level: 150,
-    health: 250000, // Reduced base HP so 1.04^149 scaling leaves room for endgame DPS
+    health: 250000,
     speed: 0.07,
     damage: 999,
     reward: 1000,
@@ -371,7 +403,7 @@ const enemyTypes = {
   c_boss_20: {
     name: "Target C-200",
     level: 200,
-    health: 500000, // Base 500k HP becomes ~1.27 Billion HP after 1.04^199 wave scaling
+    health: 500000,
     speed: 0.05,
     damage: 999,
     reward: 2500,
@@ -383,55 +415,56 @@ const enemyTypes = {
 const worldThemes = {
   1: {
     name: "Grasslands",
-    archetype: "standard",
     intro:
-      "Welcome to the Grasslands. Standard combat conditions test your core tower placement, baseline single-target DPS, and basic wave pacing.",
+      "Welcome to Grasslands. Standard combat testing baseline tower placement and single-target DPS.",
   },
   2: {
     name: "Rocky Peaks",
-    archetype: "armored",
     intro:
-      "Welcome to Rocky Peaks. Reinforced armor plating and field medics dominate this zone. Armor penetration and target prioritization become vital.",
+      "Welcome to Rocky Peaks. Armor plating and field medics dominate. Armor penetration is vital.",
   },
   3: {
     name: "Volcanic Wastes",
-    archetype: "heavy_armor",
     intro:
-      "Welcome to Volcanic Wastes. Extreme flat armor ratings front the line alongside sudden swarm drone rushes. High damage-per-hit and rapid fire-rate are both required.",
+      "Welcome to Volcanic Wastes. Heavy armor frontlines alongside swarm drone rushes.",
   },
   4: {
     name: "Frozen Citadel",
-    archetype: "swarm_flood",
     intro:
-      "Welcome to Frozen Citadel. Relentless low-HP swarm floods and blitzing runners charge the lane. High rate-of-fire towers (e.g., Rotary Minigun) and crowd coverage are critical.",
+      "Welcome to Frozen Citadel. Relentless low-HP swarm floods and blitzing runners charge the lane.",
   },
   5: {
     name: "Corrupted Swamps",
-    archetype: "support_heal",
     intro:
-      "Welcome to Corrupted Swamps. Biological regeneration and nano-repair units continuously heal incoming targets. High burst DPS is required to outpace enemy sustain.",
+      "Welcome to Corrupted Swamps. Biological regeneration and repair units continuously heal incoming targets.",
   },
   6: {
     name: "Cybernetic Fortress",
-    archetype: "shield_tech",
     intro:
-      "Welcome to Cybernetic Fortress. Overlapping energy shields absorb incoming damage for heavy cyber-tanks. Balance armor penetration with sustained firepower.",
+      "Welcome to Cybernetic Fortress. Overlapping energy shields absorb incoming damage for heavy cyber tanks.",
   },
   7: {
     name: "Abyssal Rift",
-    archetype: "mixed_elite",
     intro:
-      "Welcome to Abyssal Rift. Elite combinations of speed, armor, shields, and healing force complete tactical adaptation across all tower archetypes.",
+      "Welcome to Abyssal Rift. Elite combinations of speed, armor, shields, and healing force complete tactical adaptation.",
   },
   8: {
     name: "Celestial Apex",
-    archetype: "apex_endgame",
     intro:
-      "Welcome to Celestial Apex. The ultimate strategic test. Maximum wave density combining every enemy archetype demands optimal tech tree synergies and micro.",
+      "Welcome to Celestial Apex. High wave density combining every enemy archetype demands peak tech tree synergies.",
+  },
+  9: {
+    name: "Quantum Wasteland",
+    intro:
+      "Welcome to Quantum Wasteland. Extreme speed runners and colossal swarm floods push high-firerate towers to their absolute limits.",
+  },
+  10: {
+    name: "Genesis Core",
+    intro:
+      "Welcome to Genesis Core. The ultimate operational theater. Massive swarm floods lead into multi-boss apex encounters.",
   },
 };
 
-// Helper: Maps each specific stage directly to its description archetype
 function getStageWaveTemplate(world, stageInWorld, isFinalWave, waveIndex) {
   switch (world) {
     case 1:
@@ -582,7 +615,6 @@ function getStageWaveTemplate(world, stageInWorld, isFinalWave, waveIndex) {
           return ["shield_drone", "regen_unit"];
       }
     case 8:
-    default:
       switch (stageInWorld) {
         case 1:
           return ["flood_drone", "regen_unit", "healer", "shield_drone"];
@@ -609,17 +641,69 @@ function getStageWaveTemplate(world, stageInWorld, isFinalWave, waveIndex) {
         default:
           return ["shield_drone", "siphon_unit", "regen_unit"];
       }
+    case 9:
+      switch (stageInWorld) {
+        case 9:
+          return [
+            "flood_drone",
+            "fast",
+            "flood_drone",
+            "fast",
+            "flood_drone",
+            "fast",
+          ];
+        default:
+          return [
+            "flood_drone",
+            "flood_drone",
+            "fast",
+            "armored",
+            "siphon_unit",
+          ];
+      }
+    case 10:
+    default:
+      switch (stageInWorld) {
+        case 9:
+          return [
+            "flood_drone",
+            "fast",
+            "flood_drone",
+            "fast",
+            "flood_drone",
+            "fast",
+            "shield_drone",
+          ];
+        case 10:
+          return [
+            "basic",
+            "fast",
+            "armored",
+            "tank",
+            "healer",
+            "shield_drone",
+            "repair_unit",
+            "regen_unit",
+            "siphon_unit",
+          ];
+        default:
+          return [
+            "flood_drone",
+            "fast",
+            "siphon_unit",
+            "shield_drone",
+            "repair_unit",
+          ];
+      }
   }
 }
 
-// Generates specialized, scaled wave compositions per stage within a world
 function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
   const isFinalWave = waveIndex === maxWaves - 1;
   let waveEnemies = [];
 
   // --- 1. CORE TEMPLATE SELECTION ---
   if (stageInWorld === 10 && isFinalWave) {
-    // Boss core
     switch (world) {
       case 1:
         waveEnemies = ["boss"];
@@ -645,19 +729,23 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
       case 8:
         waveEnemies = ["apex_overlord"];
         break;
+      case 9:
+        waveEnemies = ["dread_titan"];
+        break;
+      case 10:
+        waveEnemies = [
+          "omega_titan_alpha",
+          "omega_titan_beta",
+          "omega_blitz_miniboss",
+        ];
+        break;
       default:
         waveEnemies = ["boss"];
         break;
     }
   } else if (stageInWorld === 5 && isFinalWave) {
-    // Miniboss core
-    if (world === 1) {
-      waveEnemies = ["miniboss1"];
-    } else {
-      waveEnemies = ["miniboss"];
-    }
+    waveEnemies = world === 1 ? ["miniboss1"] : ["miniboss"];
   } else {
-    // Stage-tailored wave templates matching specific stage descriptions
     waveEnemies = getStageWaveTemplate(
       world,
       stageInWorld,
@@ -666,22 +754,51 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
     );
   }
 
-  // --- 2. DYNAMIC QUANTITY SCALING ---
+  // --- 2. DYNAMIC QUANTITY & SWARM SCALING ---
   const absoluteStageIndex = (world - 1) * 10 + (stageInWorld - 1);
 
   if (stageInWorld === 10 && isFinalWave) {
-    // Boss Stages (x-10): Append escorts with drones and siphon links taking bulk slots
-    const bossEscortCount = 6 + Math.floor(world * 2.5);
-    for (let i = 0; i < bossEscortCount; i++) {
-      if (world >= 6 && i % 4 === 0) waveEnemies.push("siphon_unit");
-      else if (world >= 3 && i % 2 === 0) waveEnemies.push("flood_drone");
-      else if (world >= 6 && i % 4 === 1) waveEnemies.push("shield_drone");
-      else if (world >= 2 && i % 4 === 3) waveEnemies.push("healer");
-      else if (i % 5 === 0) waveEnemies.push("fast");
-      else waveEnemies.push("armored");
+    if (world === 10) {
+      const fullMixEscorts = [
+        "flood_drone",
+        "fast",
+        "armored",
+        "tank",
+        "healer",
+        "shield_drone",
+        "repair_unit",
+        "regen_unit",
+        "siphon_unit",
+        "flood_drone",
+        "fast",
+        "flood_drone",
+        "fast",
+      ];
+      for (let i = 0; i < 20; i++) {
+        waveEnemies.push(fullMixEscorts[i % fullMixEscorts.length]);
+      }
+    } else {
+      const bossEscortCount = 6 + Math.floor(world * 2.5);
+      for (let i = 0; i < bossEscortCount; i++) {
+        if (world >= 6 && i % 4 === 0) waveEnemies.push("siphon_unit");
+        else if (world >= 3 && i % 2 === 0) waveEnemies.push("flood_drone");
+        else if (world >= 6 && i % 4 === 1) waveEnemies.push("shield_drone");
+        else if (world >= 2 && i % 4 === 3) waveEnemies.push("healer");
+        else if (i % 5 === 0) waveEnemies.push("fast");
+        else waveEnemies.push("armored");
+      }
+    }
+  } else if (stageInWorld === 9) {
+    // Dynamic Swarm Flood Generator: Appends 20 + (12 * world) drones/fast units per wave
+    const massiveFloodCount = 20 + world * 12;
+    for (let i = 0; i < massiveFloodCount; i++) {
+      waveEnemies.push(i % 3 === 0 ? "fast" : "flood_drone");
+    }
+    if (world >= 6) {
+      waveEnemies.push("shield_drone");
+      waveEnemies.push("siphon_unit");
     }
   } else if (stageInWorld === 5 && isFinalWave) {
-    // Miniboss Stages (x-5): Append moderate escort wave
     const minibossEscortCount = 4 + Math.floor(world * 1.5);
     for (let i = 0; i < minibossEscortCount; i++) {
       if (world >= 5 && i % 3 === 0) waveEnemies.push("regen_unit");
@@ -690,13 +807,11 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
       else waveEnemies.push("tank");
     }
   } else {
-    // Standard Waves: Scale mostly from the wave's specific template to preserve stage identity
     const coreTemplate = [...waveEnemies];
     const extraCount =
       Math.floor(absoluteStageIndex / 2) + (isFinalWave ? 2 : 0);
 
     for (let i = 0; i < extraCount; i++) {
-      // Minor support insertions for high worlds
       if (world >= 5 && i % 9 === 1) {
         waveEnemies.push("regen_unit");
       } else if (world >= 3 && i % 6 === 0) {
@@ -704,7 +819,6 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
       } else if (world >= 2 && i % 8 === 4) {
         waveEnemies.push("healer");
       } else {
-        // Main scaling push: Pulls directly from the stage's specific core template
         const templateEnemy = coreTemplate[i % coreTemplate.length];
         waveEnemies.push(templateEnemy);
       }
@@ -714,40 +828,43 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
   return waveEnemies;
 }
 
-// Stage-specific description generator
 function getStageDescription(world, stageInWorld, worldInfo) {
-  if (stageInWorld === 1) {
-    return worldInfo.intro;
-  }
+  if (stageInWorld === 1) return worldInfo.intro;
 
   if (stageInWorld === 5) {
-    if (world === 1) {
+    if (world === 1)
       return "A heavy miniboss approaches! Research <b>Rear Base Defenses</b> in the <b>Tech Tree</b> and deploy <b>Base Towers</b>.";
-    }
-    if (world === 4) {
+    if (world === 4)
       return "A rapid swarm ambush precedes a high-speed mini-colossus. Maintain crowd control and fire rate!";
-    }
     return `Stage ${world}-5 Miniboss: Heavy armored threat supported by specialized support escorts. Backline firepower recommended.`;
+  }
+
+  if (stageInWorld === 9) {
+    return `⚠️ <b>MASSIVE SWARM FLOOD WARNING:</b> Hundreds of fast runners and low-HP flood drones swarm the lane! High rate-of-fire towers (1k+ fire rate) are mandatory to avoid leak damage.`;
   }
 
   if (stageInWorld === 10) {
     switch (world) {
       case 1:
-        return `${worldInfo.name} Boss: Garrison Titan. Colossal base health escorted by support drones. Requires solid single-target DPS and lane clearance.`;
+        return `${worldInfo.name} Boss: Garrison Titan. Colossal base health escorted by support drones.`;
       case 2:
-        return `${worldInfo.name} Boss: Titan Escort. Escorted by combat medics and armored scouts. Focus support units first!`;
+        return `${worldInfo.name} Boss: Titan Escort. Escorted by combat medics and armored scouts.`;
       case 3:
-        return `${worldInfo.name} Boss: Ironclad Juggernaut. High Armor Rating surrounded by volcanic swarm drones. Single hit damage and AP mandatory!`;
+        return `${worldInfo.name} Boss: Ironclad Juggernaut. High Armor Rating surrounded by volcanic swarm drones.`;
       case 4:
-        return `${worldInfo.name} Boss: Speed Demon Prime. High movement speed flanked by massive swarm floods! Rapid fire-rate towers are critical.`;
+        return `${worldInfo.name} Boss: Speed Demon Prime. High movement speed flanked by massive swarm floods!`;
       case 5:
-        return `${worldInfo.name} Boss: Bio-Siphon Leviathan. Self-regenerating biological threat backed by repair units and heavy escorts. High burst required!`;
+        return `${worldInfo.name} Boss: Bio-Siphon Leviathan. Self-regenerating biological threat backed by repair units.`;
       case 6:
-        return `${worldInfo.name} Boss: Aegis Core Sentinel. Heavy energy shielding and cyber escorts. Balance armor pen and rapid firepower.`;
+        return `${worldInfo.name} Boss: Aegis Core Sentinel. Heavy energy shielding and cyber escorts.`;
       case 7:
-        return `${worldInfo.name} Boss: Void Colossus. A massive void entity flanked by elite vanguard champions and swarm drones.`;
+        return `${worldInfo.name} Boss: Void Colossus. Massive HP void entity flanked by elite vanguard champions.`;
       case 8:
-        return `${worldInfo.name} Apex Boss: Overlord Vanguard. The ultimate strategic test. Maximize all tech synergies and targeting micro against a massive wave.`;
+        return `${worldInfo.name} Apex Boss: Overlord Vanguard. High wave density demanding max tech synergies.`;
+      case 9:
+        return `${worldInfo.name} Boss: Titan Dreadnought. Colossal armor and massive health pool testing peak single-target DPS.`;
+      case 10:
+        return `<b>APEX CORE FINAL ENCOUNTER:</b> Dual heavy slow titans (Omega Core Alpha & Beta) and a blitz stalker miniboss escorted by EVERY enemy archetype!`;
     }
   }
 
@@ -770,7 +887,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Sustained endurance wave before the regional stronghold.";
       }
       break;
-
     case 2:
       switch (stageInWorld) {
         case 2:
@@ -789,7 +905,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Final mountain defensive line before the peak's commander.";
       }
       break;
-
     case 3:
       switch (stageInWorld) {
         case 2:
@@ -808,7 +923,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Heavy endurance wave preceding the Ironclad Juggernaut.";
       }
       break;
-
     case 4:
       switch (stageInWorld) {
         case 2:
@@ -827,7 +941,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Final frost rush wave before the Speed Demon Prime.";
       }
       break;
-
     case 5:
       switch (stageInWorld) {
         case 2:
@@ -846,7 +959,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Endurance regeneration assault before the leviathan.";
       }
       break;
-
     case 6:
       switch (stageInWorld) {
         case 2:
@@ -865,7 +977,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Full cybernetic vanguard assault before the sentinel core.";
       }
       break;
-
     case 7:
       switch (stageInWorld) {
         case 2:
@@ -884,7 +995,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Final elite rift horde before the colossus.";
       }
       break;
-
     case 8:
       switch (stageInWorld) {
         case 2:
@@ -903,13 +1013,45 @@ function getStageDescription(world, stageInWorld, worldInfo) {
           return "Penultimate apex wave before the Overlord Vanguard.";
       }
       break;
+    case 9:
+      switch (stageInWorld) {
+        case 2:
+          return "High-frequency quantum scouts surge down the lane. Test your instant target lock-on speed.";
+        case 3:
+          return "Armored vanguards advancing behind dense swarm drone screens. Split your targeting between high single-hit and rapid fire-rate.";
+        case 4:
+          return "Multi-layered repair units backing up blitz runners. High burst DPS required to cut through continuous sustain.";
+        case 6:
+          return "Hyper-speed rushers flanked by shield drones. Rapid towers must strip energy shields before sniper units fire.";
+        case 7:
+          return "Juggernaut-tier armored units advancing alongside siphon link support. Armor penetration is mandatory.";
+        case 8:
+          return "Quantum endurance wave testing maximum fire-rate coverage and high-level armor-piercing synergies.";
+      }
+      break;
+    case 10:
+      switch (stageInWorld) {
+        case 2:
+          return "Apex core entry corridor. Heavy armored tanks escorted by overlapping energy shield drones.";
+        case 3:
+          return "Dual-siphon links tethering to high-health vanguards. Target priority micro is mandatory to prevent health regen.";
+        case 4:
+          return "Triple-threat support line (Medics, Repair Units, and Siphon Links) protecting heavy tank walls.";
+        case 6:
+          return "Blitz stalkers charging alongside high-density swarm floods. Demands 1,000+ fire-rate coverage.";
+        case 7:
+          return "Titan-class heavy armors advancing under full bio-regeneration and energy shield coverage.";
+        case 8:
+          return "Penultimate core gauntlet testing total endgame DPS, maximum armor penetration, and total board fire-rate.";
+      }
+      break;
   }
 
   return `Stage ${world}-${stageInWorld}: Adapt your tactical deployment and tech tree stats.`;
 }
 
-// Build 8 Worlds (80 Stages)
-const TOTAL_WORLDS = 8;
+// Build 10 Worlds (100 Stages)
+const TOTAL_WORLDS = 10;
 const STAGES_PER_WORLD = 10;
 
 const stages = Array.from(
@@ -957,9 +1099,8 @@ const stages = Array.from(
 );
 
 /* ==========================================================================
-   CHALLENGES
+   CHALLENGES (Targets C-010 to C-200)
    ========================================================================== */
-
 const challengeStages = Array.from({ length: 20 }, (_, index) => {
   const level = index + 1;
   const bossKey = `c_boss_${level}`;
@@ -969,7 +1110,6 @@ const challengeStages = Array.from({ length: 20 }, (_, index) => {
 
   const travelTimeSeconds = (11 / speed).toFixed(1);
 
-  // Calculate scaled HP and Armor using STAT_SCALERS directly
   const rawBaseHp = bossData?.health || 0;
   const hpScaler =
     STAT_SCALERS.health || ((lvl) => Math.pow(1.04, Math.max(0, lvl - 1)));
@@ -980,7 +1120,6 @@ const challengeStages = Array.from({ length: 20 }, (_, index) => {
     STAT_SCALERS.armor || ((lvl) => Math.pow(1.032, Math.max(0, lvl - 1)));
   const scaledArmor = Math.round(rawBaseArmor * armorScaler(enemyLevel));
 
-  // Build stat summary text with scaled HP & Armor
   const healText =
     bossData?.type === "self_healer"
       ? ` · Regen: ${bossData.selfHealAmount} HP / ${(bossData.healInterval / 1000).toFixed(1)}s`
@@ -990,14 +1129,14 @@ const challengeStages = Array.from({ length: 20 }, (_, index) => {
 
   return {
     id: `C-${level}`,
-    index: index, // Required for stage lock checks
+    index: index,
     isChallenge: true,
     level: level,
     enemyLevel: enemyLevel,
     name: bossData?.name || `Target C-${level}`,
     description: `Defeat <b>${bossData?.name || "Target C-" + level}</b>.<br><small>${statsSummary}</small><br>⚠️ <b>Time Limit:</b> You have ~<b>${travelTimeSeconds}s</b> to defeat this boss before it reaches your base!<br>First clear awards a massive Gold bounty and <b>1 Challenge Ticket</b>!`,
     reward: 2500 + index * 1250,
-    waves: [[bossKey]], // Single wave, single boss
-    stReward: 20 + level * 3
+    waves: [[bossKey]],
+    stReward: 20 + level * 3,
   };
 });

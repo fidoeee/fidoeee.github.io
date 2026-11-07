@@ -1316,7 +1316,7 @@ function getUpgradeCost(unit) {
   const growthFactor =
     typeof techNodes !== "undefined" && techNodes.eco_discount
       ? techNodes.eco_discount.getBonus(getTechNodeLevel("eco_discount"))
-      : 0;
+      : 3.5;
 
   return Math.round(baseCost * Math.pow(growthFactor, unit.upgradeCount ?? 0));
 }

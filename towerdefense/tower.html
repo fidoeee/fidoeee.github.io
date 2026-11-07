@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Turret Defense</title>
+    <link rel="stylesheet" href="style.css" />
+
+    <script src="units.js" defer></script>
+    <script src="pool.js" defer></script>
+    <script src="enemies.js" defer></script>
+    <script src="techTree.js" defer></script>
+    <script src="game.js" defer></script>
+    <script src="battle.js" defer></script>
+  </head>
+
+  <body>
+    <!-- Sticky / Fixed Top Navigation Bar -->
+    <div class="title-bar">
+      <div class="title-row">
+        <div>
+          <h1>Turret Defense</h1>
+        </div>
+
+        <div class="save-controls-group">
+          <span id="active-save-display" class="save-slot-display"
+            >Save: Slot 1</span
+          >
+
+          <!-- Save Menu Dropdown -->
+          <div class="slot-dropdown-container">
+            <button
+              id="save-menu-btn"
+              class="slot-action-btn save"
+              type="button"
+            >
+              Save ▼
+            </button>
+            <div id="save-menu" class="slot-dropdown-menu hidden">
+              <button
+                type="button"
+                class="slot-menu-item"
+                onclick="handleSaveToSlot(1)"
+              >
+                Save to Slot 1
+              </button>
+              <button
+                type="button"
+                class="slot-menu-item"
+                onclick="handleSaveToSlot(2)"
+              >
+                Save to Slot 2
+              </button>
+              <button
+                type="button"
+                class="slot-menu-item"
+                onclick="handleSaveToSlot(3)"
+              >
+                Save to Slot 3
+              </button>
+            </div>
+          </div>
+
+          <!-- Load Menu Dropdown -->
+          <div class="slot-dropdown-container">
+            <button
+              id="load-menu-btn"
+              class="slot-action-btn load"
+              type="button"
+            >
+              Load ▼
+            </button>
+            <div id="load-menu" class="slot-dropdown-menu hidden">
+              <button
+                type="button"
+                class="slot-menu-item"
+                onclick="handleLoadFromSlot(1)"
+              >
+                Load Slot 1
+              </button>
+              <button
+                type="button"
+                class="slot-menu-item"
+                onclick="handleLoadFromSlot(2)"
+              >
+                Load Slot 2
+              </button>
+              <button
+                type="button"
+                class="slot-menu-item"
+                onclick="handleLoadFromSlot(3)"
+              >
+                Load Slot 3
+              </button>
+            </div>
+          </div>
+
+          <button id="reset-storage-button" class="reset-button" type="button">
+            Reset Save
+          </button>
+          <button id="options-menu-btn" type="button" class="action-button">
+            ⚙️ Options
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Options Modal Overlay -->
+    <div id="options-modal-overlay" class="unit-popup-overlay hidden">
+      <div class="unit-popup options-popup">
+        <div class="unit-popup-header">
+          <h2>⚙️ Game Options</h2>
+          <button
+            id="close-options-btn"
+            type="button"
+            class="unit-popup-close"
+            aria-label="Close options"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="options-content">
+          <label class="option-row">
+            <input type="checkbox" id="toggle-clear-popup-checkbox" checked />
+            <span>Show Stage Cleared Summary Popup</span>
+          </label>
+
+          <label class="option-row">
+            <input
+              type="checkbox"
+              id="toggle-backline-cooldown-checkbox"
+              checked
+            />
+            <span>Show Backline Cooldown</span>
+          </label>
+
+          <label class="option-row">
+            <input
+              type="checkbox"
+              id="toggle-frontline-cooldown-checkbox"
+              checked
+            />
+            <span>Show Frontline Cooldown</span>
+          </label>
+
+          <label class="option-row">
+            <input type="checkbox" id="toggle-swap-layout-checkbox" />
+            <span>Show Backline Above Main</span>
+          </label>
+
+          <label class="option-row">
+            <input type="checkbox" id="toggle-simplified-log-checkbox" />
+            <span>Simplify Battle Log</span>
+          </label>
+
+          <label class="option-row">
+            <input type="checkbox" id="toggle-hide-maxed-tech-checkbox" />
+            <span>Hide Maxed Tech Upgrades</span>
+          </label>
+
+          <label class="option-row">
+            <input type="checkbox" id="toggle-unpin-topbar-checkbox" />
+            <span>Unpin Top Bar</span>
+          </label>
+
+          <label class="option-row">
+            <input
+              type="checkbox"
+              id="toggle-show-more-stats-checkbox"
+              checked
+            />
+            <span>Show More Stats</span>
+          </label>
+
+          <label class="option-row">
+            <input
+              type="checkbox"
+              id="toggle-show-tech-bonus-checkbox"
+              checked
+            />
+            <span>Show Tech Stat Breakdown</span>
+          </label>
+        </div>
+
+        <div class="unit-popup-actions">
+          <button
+            id="save-options-btn"
+            type="button"
+            class="stage-clear-continue-btn"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Non-Sticky Stats Bar -->
+    <header class="stats-header">
+      <div class="stats">
+        <div class="stat"><span>Gold</span><strong id="gold">100</strong></div>
+        <div class="stat"><span>ST</span><strong id="st">0</strong></div>
+        <div class="stat">
+          <span>Base Health</span><strong id="base-health">100 / 100</strong>
+        </div>
+        <div class="stat">
+          <span>Stage · Wave</span><strong id="wave">1-1 · 0</strong>
+        </div>
+        <div class="stat">
+          <span>Damage Level</span><strong id="damage-level">1</strong>
+        </div>
+        <div class="stat">
+          <span>Deployed Units</span><strong id="active-slots">0 / 3</strong>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- FULL-WIDTH TOP PANEL -->
+      <section class="panel campaign-panel">
+        <div class="tab-buttons">
+          <button
+            id="campaign-mode-tab-btn"
+            class="tab-button active"
+            type="button"
+          >
+            Campaign
+          </button>
+          <button id="challenge-mode-tab-btn" class="tab-button" type="button">
+            Challenge Mode
+          </button>
+        </div>
+
+        <p id="mode-description-text">
+          Choose an unlocked stage. Clear all its waves to unlock the next
+          stage.
+        </p>
+
+        <div id="stage-world-label" class="stage-world-label">
+          World 1 — Grasslands
+        </div>
+
+        <div id="stage-grid" class="stage-grid"></div>
+        <div id="stage-details" class="stage-details"></div>
+      </section>
+
+      <!-- TWO-COLUMN GAME CONTAINER -->
+      <div class="game-columns">
+        <!-- LEFT COLUMN: Gameplay & Actions -->
+        <div class="left-column">
+          <section class="panel shop-panel">
+            <h2>Shop</h2>
+            <p>Build Main turrets or summon heavy Rear base defenses.</p>
+
+            <div class="shop-actions">
+              <div class="shop-build-group">
+                <button id="buy-unit" type="button">
+                  Build Main Tower (50 Gold + 5 ST)
+                </button>
+                <button
+                  id="main-pool-info-btn"
+                  class="pool-info-btn"
+                  type="button"
+                  title="View Main Tower Pool"
+                >
+                  ℹ️
+                </button>
+              </div>
+
+              <div class="shop-build-group">
+                <button id="buy-rear-unit" type="button">
+                  Build Rear Tower (100 Gold + 10 ST)
+                </button>
+                <button
+                  id="rear-pool-info-btn"
+                  class="pool-info-btn"
+                  type="button"
+                  title="View Rear Tower Pool"
+                >
+                  ℹ️
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel deployment-panel">
+            <div class="deployment-header">
+              <div>
+                <h2>Deployment <span id="deployment-count">(0/3)</span></h2>
+              </div>
+              <button
+                id="toggle-presets-btn"
+                class="preset-toggle-btn"
+                type="button"
+              >
+                Presets ▼
+              </button>
+            </div>
+
+            <div id="preset-panel" class="preset-collapsible hidden"></div>
+
+            <!-- Main Defenses Wrapper -->
+            <div class="main-deployment-row">
+              <p class="hint">Main Defenses</p>
+              <div id="slots" class="slots"></div>
+            </div>
+
+            <!-- Base Defenses Wrapper -->
+            <div class="base-deployment-row">
+              <p class="hint">Base Defenses (Global Range)</p>
+              <div id="base-slots" class="slots base-slots"></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- RIGHT COLUMN: Management & Progression -->
+        <div class="right-column">
+          <section class="panel inventory-panel">
+            <div class="inventory-header">
+              <div>
+                <button
+                  id="inventory-title-btn"
+                  class="inventory-tab-btn"
+                  type="button"
+                >
+                  Inventory ⇄
+                </button>
+              </div>
+
+              <div class="inventory-controls">
+                <button id="inventory-filter-button" type="button">
+                  Filter: All
+                </button>
+
+                <!-- Changed from button to dropdown -->
+                <select id="inventory-sort-select" aria-label="Sort Inventory">
+                  <option value="level" selected>Sort: Level</option>
+                  <option value="name">Sort: Name</option>
+                  <option value="rarity">Sort: Rarity</option>
+                  <option value="upgrades">Sort: Upgrade</option>
+                  <option value="newest">Sort: Newest</option>
+                </select>
+
+                <button
+                  id="inventory-sort-order-button"
+                  type="button"
+                  aria-label="Toggle sort order"
+                >
+                  ▼
+                </button>
+                <button
+                  id="toggle-inventory-button"
+                  type="button"
+                  aria-label="Toggle Inventory"
+                >
+                  →
+                </button>
+              </div>
+            </div>
+
+            <div id="inventory-content">
+              <div id="inventory-list" class="unit-list"></div>
+            </div>
+          </section>
+
+          <section class="panel tech-tree-panel">
+            <div class="tech-tree-header">
+              <h2>Tech Tree</h2>
+
+              <div class="tech-tab-buttons">
+                <button
+                  id="tech-tree-tab-btn"
+                  class="tab-button active"
+                  type="button"
+                >
+                  Tech Tree
+                </button>
+                <button
+                  id="challenge-bonus-tab-btn"
+                  class="tab-button"
+                  type="button"
+                >
+                  Challenge Bonus
+                </button>
+              </div>
+
+              <button
+                id="toggle-tech-tree-button"
+                type="button"
+                aria-label="Toggle Tech Tree"
+              >
+                →
+              </button>
+            </div>
+            <div id="tech-tree-content" class="tech-tree-content"></div>
+          </section>
+          <section class="panel battle-panel">
+            <h2>Battle — Tick <span id="tick-count">0</span></h2>
+
+            <div class="tab-buttons">
+              <button
+                id="battle-tab-button"
+                class="tab-button active"
+                type="button"
+                aria-selected="true"
+              >
+                Battle
+              </button>
+
+              <button
+                id="enemies-tab-button"
+                class="tab-button"
+                type="button"
+                aria-selected="false"
+              >
+                Enemies (<span id="enemy-count">0</span>)
+              </button>
+
+              <button
+                id="stats-tab-button"
+                class="tab-button"
+                type="button"
+                aria-selected="false"
+              >
+                Statistics
+              </button>
+            </div>
+
+            <div id="battle-tab" class="tab-content">
+              <p id="enemy-status">
+                Choose a stage, then enter it to start the first wave.
+              </p>
+
+              <div class="battle-controls">
+                <button id="start-wave" type="button" disabled>
+                  Start Wave
+                </button>
+                <button id="skip-battle" type="button" disabled>Skip</button>
+                <select id="speed-select" class="speed-dropdown">
+                  <option value="slowest">Slowest</option>
+                  <option value="0.5">0.5x Speed</option>
+                  <option value="1" selected>1x Speed</option>
+                  <option value="2">2x Speed</option>
+                  <option value="4">4x Speed</option>
+                  <option value="8">8x Speed</option>
+                  <option value="16">16x Speed</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="enemies-tab" class="tab-content" hidden>
+              <div class="enemies-tab-controls">
+                <label for="enemy-sort-select">Sort By: </label>
+                <select id="enemy-sort-select">
+                  <option value="default">Default</option>
+                  <option value="first">First</option>
+                  <option value="last">Last</option>
+                  <option value="strongest">Strongest</option>
+                  <option value="weakest">Weakest</option>
+                  <option value="highest_armor">Armor</option>
+                  <option value="lowest_armor">Light</option>
+                </select>
+              </div>
+
+              <div id="enemy-list" class="enemy-list">
+                <p class="empty-message">No active enemies.</p>
+              </div>
+            </div>
+
+            <div id="stats-tab" class="tab-content" hidden>
+              <div id="stats-list" class="stats-list">
+                <p class="empty-message">No battle statistics yet.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel log-panel">
+            <h2>Battle Log</h2>
+            <div id="log" class="log" aria-live="polite"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

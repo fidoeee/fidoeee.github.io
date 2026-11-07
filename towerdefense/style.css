@@ -704,7 +704,9 @@ body.no-scroll {
   border: 1px solid #384253; /* Default Grey Outline */
   border-radius: 6px;
   width: fit-content;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .auto-repeat-row label {
@@ -978,7 +980,7 @@ body.no-scroll {
 
 .inventory-panel.expanded #inventory-list {
   display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); /*MAYBE*/
   grid-auto-rows: max-content !important;
   gap: 10px !important;
   height: 100% !important;
@@ -1089,7 +1091,8 @@ body.no-scroll {
 
 .tech-tree-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Automatically wraps columns based on available width instead of forcing 5 columns */
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
   margin-top: 10px;
 }
@@ -1361,13 +1364,12 @@ body.no-scroll {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap; /* Allows wrapping when container runs out of space */
   background: #17202c;
   border: 1px solid #384253;
   border-radius: 6px;
   padding: 6px 10px;
   margin-bottom: 12px;
-  white-space: nowrap;
 }
 
 .preset-collapsible.hidden {
@@ -1379,7 +1381,7 @@ body.no-scroll {
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap; /* Allows preset slot groups to wrap cleanly */
 }
 
 .preset-group {
@@ -1390,6 +1392,7 @@ body.no-scroll {
   padding: 3px 6px;
   border-radius: 4px;
   border: 1px solid #3c485b;
+  flex-shrink: 0; /* Prevents individual preset slot buttons from shrinking */
 }
 
 .preset-label {
@@ -1412,6 +1415,8 @@ body.no-scroll {
   border: 1px solid #3d3d3d;
   cursor: pointer;
   line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0; /* Keeps button text readable */
   transition: background 0.15s ease;
 }
 
@@ -1455,6 +1460,7 @@ body.no-scroll {
   color: #ffcccc;
   white-space: nowrap;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .preset-btn.recall-btn:hover:not(:disabled) {
@@ -2343,5 +2349,111 @@ body.no-scroll {
 
   .upgrade-side-panel {
     max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Tech Tree Overlay adjustments for mobile screens */
+  .tech-tree-panel.expanded {
+    padding: 12px !important;
+  }
+
+  .tech-tree-panel.expanded .tech-tree-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .tech-tree-panel.expanded .tech-tab-buttons {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .tech-tree-panel.expanded .tech-tree-content {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* Force single/double column layout on smaller screens */
+  .tech-tree-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100%, 1fr));
+    gap: 10px;
+  }
+}
+
+@media (min-width: 480px) and (max-width: 768px) {
+  .tech-tree-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .preset-collapsible {
+    gap: 10px;
+  }
+
+  .preset-list {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .preset-btn.recall-btn {
+    margin-left: 0;
+    width: 100%;
+    text-align: center;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Flatten column wrappers */
+  .game-columns,
+  .left-column,
+  .right-column {
+    display: contents;
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Re-ordered panel sequence */
+  .campaign-panel { order: 1; }
+  .battle-panel   { order: 2; }
+  .deployment-panel { order: 3; }
+  .inventory-panel  { order: 4; }
+  .tech-tree-panel  { order: 5; }
+  .shop-panel       { order: 6; }
+  .log,
+  #log-panel,
+  .log-container    { order: 7; }
+
+  /* Default 2-column layout for mobile */
+  #inventory-list,
+  .slots, .inventory-panel.expanded {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .inventory-panel.expanded {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Inventory stays two columns until a single column is necessary */
+@media (max-width: 340px) {
+  #inventory-list,
+  .inventory-panel.expanded {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 2. Deployment slots collapse to 1 column at 400px or less */
+@media (max-width: 400px) {
+  .slots {
+    grid-template-columns: 1fr !important;
   }
 }
