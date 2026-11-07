@@ -838,6 +838,15 @@ function renderTechTree() {
   grid.className = "tech-tree-grid";
 
   for (const [sectionKey, section] of Object.entries(techTreeSections)) {
+    // 1. Hide the Extended Research Matrix box completely until all other tech nodes are maxed
+    if (sectionKey === "extended_unlock") {
+      const allOtherTechMaxed = Object.keys(techNodes).every((key) => {
+        if (key === "spec_extended_tech") return true;
+        return getTechNodeLevel(key) >= techNodes[key].maxLevel;
+      });
+      if (!allOtherTechMaxed) continue;
+    }
+
     const unlocked = isSectionUnlocked(sectionKey);
 
     if (typeof hideMaxedTech !== "undefined" && hideMaxedTech) {

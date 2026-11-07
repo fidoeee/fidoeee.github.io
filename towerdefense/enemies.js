@@ -790,9 +790,11 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
     }
   } else if (stageInWorld === 9) {
     // Dynamic Swarm Flood Generator: Appends 20 + (12 * world) drones/fast units per wave
-    const massiveFloodCount = 20 + world * 12;
-    for (let i = 0; i < massiveFloodCount; i++) {
-      waveEnemies.push(i % 3 === 0 ? "fast" : "flood_drone");
+    if (world >= 3) {
+      const massiveFloodCount = 20 + world * 12;
+      for (let i = 0; i < massiveFloodCount; i++) {
+        waveEnemies.push(i % 3 === 0 ? "fast" : "flood_drone");
+      }
     }
     if (world >= 6) {
       waveEnemies.push("shield_drone");
@@ -837,10 +839,6 @@ function getStageDescription(world, stageInWorld, worldInfo) {
     if (world === 4)
       return "A rapid swarm ambush precedes a high-speed mini-colossus. Maintain crowd control and fire rate!";
     return `Stage ${world}-5 Miniboss: Heavy armored threat supported by specialized support escorts. Backline firepower recommended.`;
-  }
-
-  if (stageInWorld === 9) {
-    return `⚠️ <b>MASSIVE SWARM FLOOD WARNING:</b> Hundreds of fast runners and low-HP flood drones swarm the lane! High rate-of-fire towers (1k+ fire rate) are mandatory to avoid leak damage.`;
   }
 
   if (stageInWorld === 10) {

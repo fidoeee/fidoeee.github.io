@@ -106,11 +106,11 @@ const rarityRank = {
 
 const rarityMultipliers = {
   Common: 1.0,
-  Uncommon: 1.25,
-  Rare: 1.6,
-  Epic: 2.0,
-  Legendary: 2.5,
-  Mythic: 3.2,
+  Uncommon: 1.15,
+  Rare: 1.35,
+  Epic: 1.6,
+  Legendary: 1.9,
+  Mythic: 2.25,
 };
 
 const RARITY_WEIGHTS = {
@@ -131,6 +131,15 @@ const rarityXpMap = {
   Mythic: 7500,
 };
 
+const BASE_UPGRADE_COSTS = {
+  common: 30,
+  uncommon: 50,
+  rare_main: 80,
+  rare_rear: 200,
+  epic: 300,
+  legendary: 1000,
+  mythic: 3500,
+};
 /**
  * Returns the currently available unit pool based on Tech Tree progression.
  * @param {"Main" | "Rear"} category

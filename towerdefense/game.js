@@ -1313,6 +1313,19 @@ function createUnit(type) {
 }
 
 function getUpgradeCost(unit) {
+  if (!unit) return 0;
+
+  const rarity = (unit.rarity || "common").toLowerCase();
+  const category = (unit.category || unitTypes[unit.type]?.category || "Main").toLowerCase();
+
+  const lookupKey = `${rarity}_${category}`;
+
+  const baseCost =
+    unit.baseUpgradeCost ??
+    BASE_UPGRADE_COSTS[lookupKey] ??
+    BASE_UPGRADE_COSTS[rarity] ??
+    30;
+
   const growthFactor =
     typeof techNodes !== "undefined" && techNodes.eco_discount
       ? techNodes.eco_discount.getBonus(getTechNodeLevel("eco_discount"))
@@ -1353,23 +1366,13 @@ function upgradeUnit(targetId, duplicateId) {
   gold -= cost;
   inventory.splice(duplicateIndex, 1);
 
-  // Check if range is below cap (6)
-  const canUpgradeRange = (target.range ?? 0) < 6;
-
   const roll = Math.random();
   let stat;
 
   if (roll < 0.6) {
     stat = "damage";
-  } else if (roll < 0.98) {
-    stat = "fireRate";
   } else {
-    // If range is 6 or higher, re-roll between damage and fireRate
-    if (canUpgradeRange) {
-      stat = "range";
-    } else {
-      stat = Math.random() < (0.6 / 0.98) ? "damage" : "fireRate";
-    }
+    stat = "fireRate";
   }
 
   const rarityMult = rarityMultipliers[getUnitData(target).rarity] || 1.0;
@@ -1383,9 +1386,6 @@ function upgradeUnit(targetId, duplicateId) {
       0.25,
       Number((target.baseFireRate * 0.35 * rarityMult).toFixed(2)),
     ),
-
-    // +1 Range for < legendary and +2 for >= legendary>
-    range: rarityMult >= 2.2 ? 2 : 1,
   };
 
   const oldValue = target[stat];
