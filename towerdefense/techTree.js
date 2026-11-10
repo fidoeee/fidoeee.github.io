@@ -19,8 +19,8 @@ const challengeBonusNodes = {
     id: "cb_reload_speed",
     name: "Flat Fire Rate",
     costPerLevel: (lvl) => 1 + Math.floor(lvl / 5),
-    getBonus: (lvl) => lvl * 0.2,
-    getDescription: (lvl) => `All towers +${(lvl * 0.2).toFixed(2)} fire rate.`,
+    getBonus: (lvl) => lvl * 0.1,
+    getDescription: (lvl) => `All towers +${(lvl * 0.1).toFixed(2)} fire rate.`,
   },
 };
 
@@ -303,12 +303,12 @@ const techNodes = {
     costMultLevel2: 3,
     maxLevel: 5,
     requiresNode: "offense_speed",
-    getBonus: (lvl) => (lvl === 0 ? 0 : 20 * Math.pow(3, lvl - 1)),
+    getBonus: (lvl) => (lvl === 0 ? 0 : 20 * Math.pow(2, lvl - 1)),
     getDescription: (lvl) => {
       if (lvl >= 5) return "Main towers ignore 1,620 flat enemy armor (Maxed)";
       const nextLvl = lvl + 1;
-      const nextVal = 20 * Math.pow(3, nextLvl - 1);
-      const currVal = lvl === 0 ? 0 : 20 * Math.pow(3, lvl - 1);
+      const nextVal = 20 * Math.pow(2, nextLvl - 1);
+      const currVal = lvl === 0 ? 0 : 20 * Math.pow(2, lvl - 1);
       const diff = nextVal - currVal;
       return `Main towers ignore ${nextVal} flat enemy armor (+${diff} armor ignored)`;
     },
@@ -743,6 +743,7 @@ function buyChallengeBonus(nodeId) {
   saveCampaignProgress();
   updateUI();
   renderTechTree();
+  renderDeployment(); 
 }
 
 function refundChallengeBonus(nodeId) {
@@ -778,6 +779,7 @@ function refundChallengeBonus(nodeId) {
   saveCampaignProgress();
   updateUI();
   renderTechTree();
+  renderDeployment();
 }
 
 function respecChallengeBonuses() {
@@ -811,6 +813,7 @@ function respecChallengeBonuses() {
   saveCampaignProgress();
   updateUI();
   renderTechTree();
+  renderDeployment();
 }
 
 /* ==========================================================================

@@ -11,8 +11,8 @@ const enemyTypes = {
   // --- BASIC & SWARM UNITS ---
   flood_drone: {
     name: "Swarm Drone",
-    health: 5,
-    speed: 5,
+    health: 1.1,
+    speed: 3.5,
     reward: 0.05,
     damage: 5,
     armor: 0,
@@ -129,7 +129,7 @@ const enemyTypes = {
   // --- MID & LATE WORLD BOSSES ---
   juggernaut: {
     name: "Ironclad Juggernaut",
-    health: 60000,
+    health: 50000,
     speed: 0.15,
     damage: 999,
     reward: 25,
@@ -1061,7 +1061,6 @@ const stages = Array.from(
 
     const isMinibossStage = stageInWorld === 5;
     const isBossStage = stageInWorld === 10;
-
     const waveCount = index < 4 ? 3 : 5;
 
     const stageWaves = Array.from({ length: waveCount }, (_, waveIndex) =>
@@ -1072,13 +1071,10 @@ const stages = Array.from(
       name: `World ${world}`,
       intro: "",
     };
-    let stageName = `${worldInfo.name} ${stageInWorld}`;
 
-    if (isMinibossStage) {
-      stageName = `${worldInfo.name} Miniboss`;
-    } else if (isBossStage) {
-      stageName = `${worldInfo.name} Boss`;
-    }
+    let stageName = `${worldInfo.name} ${stageInWorld}`;
+    if (isMinibossStage) stageName = `${worldInfo.name} Miniboss`;
+    else if (isBossStage) stageName = `${worldInfo.name} Boss`;
 
     const description = getStageDescription(world, stageInWorld, worldInfo);
 
@@ -1090,7 +1086,7 @@ const stages = Array.from(
       enemyLevel,
       name: stageName,
       description,
-      reward: 40 + index * 12 + (isMinibossStage ? 75 : isBossStage ? 200 : 0),
+      reward: 40 + index * 12, // Standard base reward for ALL stages
       waves: stageWaves,
     };
   },

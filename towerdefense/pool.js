@@ -70,7 +70,7 @@ const poolUpgrade5 = [
 ];
 
 // --- REAR TOWERS POOLS ---
-const rearPool = ["base_battery", "base_mortar"];
+const rearPool = ["base_battery", "base_mortar", "base_field_gun"];
 
 const rearPoolUpgrade1 = ["base_howitzer", "base_cannon"];
 const rearPoolUpgrade2 = ["base_heavy_battery", "base_missile"];
@@ -113,7 +113,7 @@ const rarityMultipliers = {
   Mythic: 2.25,
 };
 
-const RARITY_WEIGHTS = {
+const MAIN_RARITY_WEIGHTS = {
   Common: 50,
   Uncommon: 30,
   Rare: 12,
@@ -121,6 +121,17 @@ const RARITY_WEIGHTS = {
   Legendary: 2,
   Mythic: 0.8,
 };
+
+const REAR_RARITY_WEIGHTS = {
+  Common: 0,
+  Uncommon: 41,
+  Rare: 39, 
+  Epic: 12, 
+  Legendary: 6,
+  Mythic: 2,
+};
+
+const RARITY_WEIGHTS = MAIN_RARITY_WEIGHTS;
 
 const rarityXpMap = {
   Common: 75,

@@ -1,13 +1,54 @@
-// Init Worker
 const workerCode = `
 let intervalId = null;
+let intermissionTimer = null;
+
 self.onmessage = (e) => {
   if (e.data.action === "start") {
+    if (intervalId !== null) clearInterval(intervalId);
+
+    const targetInterval = e.data.interval || 100;
+
+    if (targetInterval < 10) {
+      const ticksPerMsg = Math.round(10 / targetInterval);
+      intervalId = setInterval(() => {
+        self.postMessage({ type: "tick", count: ticksPerMsg });
+      }, 10);
+    } else {
+      intervalId = setInterval(() => {
+        self.postMessage({ type: "tick", count: 1 });
+      }, targetInterval);
+    }
+  } else if (e.data.action === "startFastForward") {
+    if (intervalId !== null) clearInterval(intervalId);
+
+    const batchSize = e.data.batchSize || 40;
+
+    // 1. Immediate burst on click to eliminate launch delay
+    self.postMessage({ type: "tick", count: batchSize });
+
+    // 2. Continuous 40-tick batches matched to 60fps frame timing (~16ms)
     intervalId = setInterval(() => {
-      self.postMessage("tick");
-    }, e.data.interval || 100);
+      self.postMessage({ type: "tick", count: batchSize });
+    }, 16);
+  } else if (e.data.action === "startIntermission") {
+    if (intermissionTimer !== null) clearTimeout(intermissionTimer);
+    
+    const duration = e.data.duration || 300;
+    const tag = e.data.tag || null;
+
+    intermissionTimer = setTimeout(() => {
+      intermissionTimer = null;
+      self.postMessage({ type: "intermissionDone", tag });
+    }, duration);
   } else if (e.data.action === "stop") {
-    clearInterval(intervalId);
+    if (intervalId !== null) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+    if (intermissionTimer !== null) {
+      clearTimeout(intermissionTimer);
+      intermissionTimer = null;
+    }
   }
 };
 `;
@@ -15,11 +56,41 @@ self.onmessage = (e) => {
 const blob = new Blob([workerCode], { type: "application/javascript" });
 const gameTicker = new Worker(URL.createObjectURL(blob));
 
+let pendingRender = false;
+
+let activeIntermissionCallback = null;
+
 gameTicker.onmessage = (e) => {
-  if (e.data === "tick") {
-    battleTick(true);
+  const isTick =
+    e.data === "tick" || (typeof e.data === "object" && e.data.type === "tick");
+  const count = typeof e.data === "object" && e.data.count ? e.data.count : 1;
+
+  if (isTick) {
+    for (let i = 0; i < count; i++) {
+      battleTick(false);
+    }
+
+    // Only queue DOM repaints when the tab is actively visible
+    if (!document.hidden && !pendingRender) {
+      pendingRender = true;
+      requestAnimationFrame(() => {
+        refreshBattleUI();
+        pendingRender = false;
+      });
+    }
+    return;
+  }
+
+  // Handle worker-driven delay completion
+  if (typeof e.data === "object" && e.data.type === "intermissionDone") {
+    if (typeof activeIntermissionCallback === "function") {
+      const cb = activeIntermissionCallback;
+      activeIntermissionCallback = null;
+      cb(e.data.tag);
+    }
   }
 };
+
 let enemies = [];
 let activeUnits = [];
 let tick = 0;
@@ -60,6 +131,16 @@ function getEnemyLevelMultiplier(level, stat = "health") {
 
 function getLevelAdvantageMultiplier(attackerLevel, defenderLevel) {
   return Math.pow(1.05, attackerLevel - defenderLevel);
+}
+
+function getEffectiveTowerDamage(unit) {
+  const isFatigued = unit.energy <= 0;
+  return isFatigued ? Math.round(unit.damage * 0.3) : unit.damage;
+}
+
+function getEffectiveTowerFireRate(unit) {
+  const isFatigued = unit.energy <= 0;
+  return isFatigued ? Number((unit.fireRate * 0.3).toFixed(4)) : unit.fireRate;
 }
 
 // LOAD A WAVE
@@ -211,7 +292,6 @@ function towerDamage() {
   for (const tower of activeUnits) {
     tower.cooldown -= 1;
 
-    // Use <= 0 so exact zero boundaries fire immediately
     while (tower.cooldown <= 0) {
       const inRangeEnemies = enemies.filter((enemy) => {
         if (enemy.health <= 0) return false;
@@ -229,7 +309,6 @@ function towerDamage() {
 
       const target = inRangeEnemies.reduce((chosen, enemy) => {
         if (chosen === null) return enemy;
-
         switch (mode) {
           case "Strongest":
             return enemy.health > chosen.health ? enemy : chosen;
@@ -253,11 +332,10 @@ function towerDamage() {
       }
 
       const advantage = getLevelAdvantageMultiplier(tower.level, target.level);
-      const damage = Math.max(1, Math.round(tower.damage * advantage));
+      const effectiveBaseDmg = getEffectiveTowerDamage(tower);
+      const damage = Number((effectiveBaseDmg * advantage).toFixed(4));
 
       const armorPen = getTechMainArmorPenetration(tower);
-
-      // Reduce target armor before calculating net damage
       const effectiveArmor = Math.max(0, (target.armor || 0) - armorPen);
       const netDamage = Math.max(0, damage - effectiveArmor);
 
@@ -267,7 +345,6 @@ function towerDamage() {
 
       target.health -= netDamage;
 
-      // Add exact cooldown duration
       tower.cooldown += tower.cooldownMax;
 
       if (target.health <= 0) {
@@ -284,26 +361,22 @@ function towerDamage() {
             ? getTechGoldMultiplier()
             : 1;
 
-        // Calculate precise fractional bounty
         const exactBounty = rawBounty * stageMultiplier * techMultiplier;
         const baseBounty = Math.floor(exactBounty);
         const remainder = exactBounty - baseBounty;
 
-        // Probabilistic roll for decimal portion
         const bounty = baseBounty + (Math.random() < remainder ? 1 : 0);
 
         if (bounty > 0) {
           gold += bounty;
-
-          // Track enemy gold for end-of-stage clear summary popup
           if (typeof addStageEnemyGold === "function") {
             addStageEnemyGold(bounty);
           }
         }
 
         addLog(
-          `${target.name} Lv.${target.level} defeated! ` + `+${bounty} gold.`,
-          true, // Marked as minor log
+          `${target.name} Lv.${target.level} defeated! +${bounty} gold.`,
+          true,
         );
       }
     }
@@ -312,28 +385,33 @@ function towerDamage() {
   enemies = enemies.filter((enemy) => enemy.health > 0);
 }
 
-// Helper to create cooldown badge
 function updateBacklineCooldownDisplay() {
-  if (typeof showBacklineCooldown !== "undefined" && !showBacklineCooldown)
-    return;
+  const isRunning = isBattleRunning();
 
-  for (let i = 0; i < maxBaseSlots; i++) {
-    const unit = deployedBaseUnits[i];
-    const cdBadge = document.getElementById(`base-slot-cd-${i}`);
+  // Update Backline Base Slots
+  if (typeof showBacklineCooldown !== "undefined" && showBacklineCooldown) {
+    for (let i = 0; i < maxBaseSlots; i++) {
+      const unit = deployedBaseUnits[i];
+      const cdBadge = document.getElementById(`base-slot-cd-${i}`);
 
-    if (cdBadge && unit !== null) {
-      if (isBattleRunning()) {
-        const currentCd = Math.max(0, Math.ceil(unit.cooldown || 0));
-        cdBadge.textContent =
-          currentCd > 0 ? `⏳ CD: ${currentCd} ticks` : `⚡ Ready`;
-        cdBadge.classList.toggle("ready", currentCd === 0);
-      } else {
-        // Fall back to max cooldown ticks outside of an active wave
-        const maxCd = Math.round(
-          unit.cooldownMax || 100 / Math.max(0.1, unit.fireRate),
-        );
-        cdBadge.textContent = `⏳ CD: ${maxCd} ticks`;
-        cdBadge.classList.remove("ready");
+      if (cdBadge && unit !== null) {
+        const { text, isReady } = getCooldownDisplayText(unit, isRunning);
+        cdBadge.textContent = text;
+        cdBadge.classList.toggle("ready", isReady);
+      }
+    }
+  }
+
+  // Update Frontline Main Slots
+  if (typeof showFrontlineCooldown !== "undefined" && showFrontlineCooldown) {
+    for (let i = 0; i < maxSlots; i++) {
+      const unit = deployedUnits[i];
+      const cdBadge = document.getElementById(`main-slot-cd-${i}`);
+
+      if (cdBadge && unit !== null) {
+        const { text, isReady } = getCooldownDisplayText(unit, isRunning);
+        cdBadge.textContent = text;
+        cdBadge.classList.toggle("ready", isReady);
       }
     }
   }
@@ -401,7 +479,7 @@ function renderEnemyList() {
 
     const hp = document.createElement("span");
     const armorBadge = enemy.armor > 0 ? ` | 🛡️ ${enemy.armor}` : "";
-    hp.textContent = `${Math.max(0, enemy.health)} / ${enemy.maxHealth} HP${armorBadge}`;
+    hp.textContent = `${Math.max(0, enemy.health.toFixed(0))} / ${enemy.maxHealth.toFixed(0)} HP${armorBadge}`;
 
     heading.append(name, hp);
 
@@ -498,6 +576,10 @@ function updateRangeEnemyInfo() {
 
 // STOP THE CURRENT BATTLE
 function stopBattle() {
+  isStoppingBattle = true;
+
+  cancelWorkerIntermission();
+
   if (typeof autoWaveTimeout !== "undefined" && autoWaveTimeout !== null) {
     clearTimeout(autoWaveTimeout);
     autoWaveTimeout = null;
@@ -514,7 +596,6 @@ function stopBattle() {
   }
 
   fastForward = false;
-
   enemies = [];
   activeUnits = [];
 
@@ -568,6 +649,7 @@ function handleGameOver() {
 
 // ONE BATTLE TICK
 function battleTick(updateDisplay = true) {
+  if (isStoppingBattle) return false;
   tick++;
 
   enemyMovement();
@@ -636,15 +718,14 @@ function toggleFastForward() {
   if (fastForward) {
     fastForward = false;
 
-    if (fastForwardTimer !== null) {
-      clearTimeout(fastForwardTimer);
-      fastForwardTimer = null;
+    if (battleLoop !== null) {
+      gameTicker.postMessage({ action: "stop" });
+      battleLoop = null;
     }
 
     skipBattleButton.textContent = "Skip";
     startNormalSpeed();
     refreshBattleUI();
-
     return;
   }
 
@@ -654,9 +735,34 @@ function toggleFastForward() {
   }
 
   fastForward = true;
-  skipBattleButton.textContent = "Normal Speed";
+  skipBattleButton.textContent = "Skipping";
 
-  runFastForwardBatch();
+  gameTicker.postMessage({ action: "startFastForward", batchSize: 200 });
+  battleLoop = true;
+}
+
+function skipCurrentWave() {
+  if (battleLoop === null || isStoppingBattle) return;
+
+  // 1. Stop the worker timer so it doesn't dispatch extra ticks mid-simulation
+  gameTicker.postMessage({ action: "stop" });
+  battleLoop = null;
+  fastForward = false;
+
+  // 2. Synchronously process all remaining ticks in a single main-thread execution
+  let safetyLimit = 10000; // Safety cap to prevent infinite loops
+  while (
+    enemies.length > 0 &&
+    baseHealth > 0 &&
+    !isStoppingBattle &&
+    safetyLimit > 0
+  ) {
+    battleTick(false);
+    safetyLimit--;
+  }
+
+  // 3. Force an immediate screen render showing the end-of-wave state
+  refreshBattleUI();
 }
 
 // TAB SWITCHING
@@ -822,7 +928,7 @@ function toggleSlowMode() {
   slowMode = !slowMode;
 
   if (battleLoop !== null) {
-    clearInterval(battleLoop);
+    gameTicker.postMessage({ action: "stop" });
     battleLoop = null;
     startNormalSpeed();
   }
@@ -833,15 +939,15 @@ function battleStart(waveNumber) {
   if (battleLoop !== null || fastForward) return;
   if (!loadWave(waveNumber)) return;
 
+  isStoppingBattle = false;
+
   const activeMain = deployedUnits
     .map((unit, index) => {
       if (unit === null) return null;
-
       unit.location = index + 1;
       unit.waveDamage = 0;
       unit.waveKills = 0;
       recalculateUnitStats(unit);
-
       return unit;
     })
     .filter((unit) => unit !== null);
@@ -849,13 +955,11 @@ function battleStart(waveNumber) {
   const activeRear = deployedBaseUnits
     .map((unit, index) => {
       if (unit === null) return null;
-
       unit.location = laneEnd;
       unit.selectedSlot = index;
       unit.waveDamage = 0;
       unit.waveKills = 0;
       recalculateUnitStats(unit);
-
       return unit;
     })
     .filter((unit) => unit !== null);
@@ -863,7 +967,8 @@ function battleStart(waveNumber) {
   activeUnits = [...activeMain, ...activeRear];
 
   for (const tower of activeUnits) {
-    tower.cooldownMax = 100 / Math.max(0.1, tower.fireRate);
+    const effectiveFireRate = getEffectiveTowerFireRate(tower);
+    tower.cooldownMax = 100 / Math.max(0.1, effectiveFireRate);
 
     if ((tower.category || "Main") === "Rear") {
       const reduction =
@@ -878,7 +983,6 @@ function battleStart(waveNumber) {
 
   tick = 0;
   tickDisplay.textContent = tick;
-
   fastForward = false;
 
   startWaveButton.disabled = true;
@@ -903,7 +1007,7 @@ skipBattleButton.addEventListener("click", () => {
   if (typeof cancelAutoRepeat === "function") {
     cancelAutoRepeat();
   }
-  toggleFastForward();
+  skipCurrentWave();
 });
 
 battleTabButton.addEventListener("click", () => {
@@ -983,264 +1087,6 @@ function updateSpeedDropdownLock() {
     currentTickDelay = NORMAL_TICK_DELAY / maxSpeed;
   }
 }
-
-/* ==========================================================================
-   BACKGROUND CATCH-UP (OFFLINE SIMULATION)
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    lastBackgroundTimestamp = Date.now();
-  } else {
-    const elapsedSeconds = (Date.now() - lastBackgroundTimestamp) / 1000;
-    if (typeof isBattleRunning === "function" && isBattleRunning()) {
-      simulateBackgroundTime(elapsedSeconds);
-    }
-  }
-});
-
-// 2. Updated Background Catch-Up Simulation
-
-function simulateBackgroundTime(seconds) {
-  if (isBackgroundCatchUpActive) return;
-
-  const activeDelay = slowMode ? SLOW_TICK_DELAY : currentTickDelay;
-  const tickRateSeconds = activeDelay / 1000;
-
-  const missedTicks = Math.floor(seconds / tickRateSeconds);
-  let remainingTicks = Math.min(missedTicks, 500000);
-
-  if (remainingTicks <= 0) return;
-
-  // Suspend all active timers
-  if (battleLoop !== null) {
-    clearInterval(battleLoop);
-    battleLoop = null;
-  }
-  if (fastForwardTimer !== null) {
-    clearTimeout(fastForwardTimer);
-    fastForwardTimer = null;
-  }
-  fastForward = false;
-  if (autoWaveTimeout !== null) {
-    clearTimeout(autoWaveTimeout);
-    autoWaveTimeout = null;
-  }
-
-  isBackgroundCatchUpActive = true;
-
-  const totalTicksToProcess = remainingTicks;
-  let processedTicks = 0;
-  let startGold = gold;
-  let startSt = st;
-  let wavesCleared = 0;
-
-  const popupElements = createCatchUpPopup(totalTicksToProcess);
-
-  function processBatch() {
-    if (!isBackgroundCatchUpActive) return;
-
-    const BATCH_LIMIT = 5000;
-    let ticksInThisBatch = 0;
-
-    while (
-      remainingTicks > 0 &&
-      ticksInThisBatch < BATCH_LIMIT &&
-      isBackgroundCatchUpActive
-    ) {
-      remainingTicks--;
-      processedTicks++;
-      ticksInThisBatch++;
-
-      const battleEnded = !battleTick(false);
-
-      if (battleEnded) {
-        wavesCleared++;
-        if (
-          (typeof autoStartWaveEnabled !== "undefined" &&
-            autoStartWaveEnabled) ||
-          (typeof autoRepeatEnabled !== "undefined" && autoRepeatEnabled)
-        ) {
-          if (autoWaveTimeout !== null) {
-            clearTimeout(autoWaveTimeout);
-            autoWaveTimeout = null;
-          }
-
-          if (stageEntered && startWaveAvailable && !isBattleRunning()) {
-            startWave(); // Will load wave stats without starting setInterval due to guard
-          } else if (autoRepeatEnabled && !stageEntered && !isBattleRunning()) {
-            enterStage();
-          } else {
-            remainingTicks = 0;
-            break;
-          }
-        } else {
-          remainingTicks = 0;
-          break;
-        }
-      }
-    }
-
-    // Dynamic UI Updates
-    const goldGained = Math.max(0, gold - startGold);
-    const stGained = Math.max(0, st - startSt);
-    const progressPercent = Math.min(
-      100,
-      Math.floor((processedTicks / totalTicksToProcess) * 100),
-    );
-
-    popupElements.progressBar.style.width = `${progressPercent}%`;
-    popupElements.progressText.textContent = `${processedTicks} / ${totalTicksToProcess} ticks (${progressPercent}%)`;
-    popupElements.goldText.textContent = `+${goldGained.toLocaleString()}`;
-    popupElements.stText.textContent = `+${stGained}`;
-    popupElements.runsText.textContent = `${wavesCleared}`;
-
-    if (remainingTicks > 0 && isBackgroundCatchUpActive) {
-      requestAnimationFrame(processBatch);
-    } else {
-      popupElements.continueButton.hidden = false;
-      popupElements.quitButton.textContent = "Close";
-    }
-  }
-
-  requestAnimationFrame(processBatch);
-}
-
-// 3. Helper for Modal & Pause Control
-function createCatchUpPopup(totalTicks) {
-  document.getElementById("offline-catchup-overlay")?.remove();
-
-  const overlay = document.createElement("div");
-  overlay.id = "offline-catchup-overlay";
-  overlay.className = "unit-popup-overlay";
-  overlay.style.zIndex = "10000";
-
-  const popup = document.createElement("div");
-  popup.className = "unit-popup stage-clear-popup";
-  popup.style.maxWidth = "420px";
-
-  const title = document.createElement("h2");
-  title.className = "stage-clear-title";
-  title.innerHTML = "⚡ Welcome Back!";
-
-  const subtitle = document.createElement("p");
-  subtitle.className = "unit-popup-subtitle";
-  subtitle.textContent = "Simulating offline background combat...";
-
-  const track = document.createElement("div");
-  track.className = "xp-track";
-  track.style.height = "12px";
-  track.style.margin = "16px 0 6px 0";
-
-  const progressBar = document.createElement("div");
-  progressBar.className = "xp-fill";
-  progressBar.style.width = "0%";
-  progressBar.style.background = "#38bdf8";
-  track.appendChild(progressBar);
-
-  const progressText = document.createElement("small");
-  progressText.style.color = "#94a3b8";
-  progressText.style.fontWeight = "600";
-  progressText.textContent = `0 / ${totalTicks} ticks (0%)`;
-
-  const rewardsBox = document.createElement("div");
-  rewardsBox.className = "stacked-rewards-box";
-  rewardsBox.style.marginTop = "16px";
-
-  const heading = document.createElement("span");
-  heading.className = "stacked-rewards-heading";
-  heading.textContent = "Real-Time Yield";
-  rewardsBox.appendChild(heading);
-
-  const list = document.createElement("div");
-  list.className = "stacked-reward-list";
-
-  const goldRow = document.createElement("div");
-  goldRow.className = "stacked-reward-item gold-reward";
-  goldRow.innerHTML = `
-    <div class="stacked-reward-info">
-      <span class="stacked-reward-icon">🪙</span>
-      <div class="stacked-reward-text"><strong>Gold Earned</strong></div>
-    </div>
-    <span id="catchup-gold-val" class="stacked-reward-value">+0</span>
-  `;
-
-  const stRow = document.createElement("div");
-  stRow.className = "stacked-reward-item st-reward";
-  stRow.innerHTML = `
-    <div class="stacked-reward-info">
-      <span class="stacked-reward-icon">⭐</span>
-      <div class="stacked-reward-text"><strong>ST Earned</strong></div>
-    </div>
-    <span id="catchup-st-val" class="stacked-reward-value">+0</span>
-  `;
-
-  const runsRow = document.createElement("div");
-  runsRow.className = "stacked-reward-item ticket-reward";
-  runsRow.innerHTML = `
-    <div class="stacked-reward-info">
-      <span class="stacked-reward-icon">🌊</span>
-      <div class="stacked-reward-text"><strong>Waves Cleared</strong></div>
-    </div>
-    <span id="catchup-runs-val" class="stacked-reward-value">0</span>
-  `;
-
-  const actions = document.createElement("div");
-  actions.style.display = "flex";
-  actions.style.justifyContent = "center";
-  actions.style.gap = "12px";
-  actions.style.marginTop = "18px";
-
-  const continueButton = document.createElement("button");
-  continueButton.type = "button";
-  continueButton.textContent = "Continue";
-  continueButton.hidden = true;
-
-  const quitButton = document.createElement("button");
-  quitButton.type = "button";
-  quitButton.textContent = "Quit Simulation";
-
-  const closeCatchUp = (shouldResumeBattle = true) => {
-    isBackgroundCatchUpActive = false;
-    overlay.remove();
-    refreshBattleUI();
-    if (typeof renderDeployment === "function") renderDeployment();
-    if (typeof renderStageSelect === "function") renderStageSelect();
-
-    // Resume normal speed only if requested and battle is active
-    if (
-      shouldResumeBattle &&
-      stageEntered &&
-      !startWaveAvailable &&
-      enemies.length > 0
-    ) {
-      startNormalSpeed();
-    }
-  };
-
-  continueButton.addEventListener("click", () => closeCatchUp(true));
-  quitButton.addEventListener("click", () => closeCatchUp(false));
-  actions.append(continueButton, quitButton);
-
-  list.append(goldRow, stRow, runsRow);
-  rewardsBox.appendChild(list);
-
-  popup.append(title, subtitle, track, progressText, rewardsBox, actions);
-  overlay.appendChild(popup);
-  document.body.appendChild(overlay);
-
-  return {
-    overlay,
-    progressBar,
-    progressText,
-    goldText: goldRow.querySelector("#catchup-gold-val"),
-    stText: stRow.querySelector("#catchup-st-val"),
-    runsText: runsRow.querySelector("#catchup-runs-val"),
-    continueButton,
-    quitButton,
-  };
-}
-
-========================================================================== */
 
 //===========================================================================
 // INITIALIZE BATTLE UI

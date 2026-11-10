@@ -11,6 +11,7 @@ const PRESETS_SAVE_KEY = "turretDefensePresetsV1";
 let gold = 100;
 let baseHealth = 100;
 let st = 10;
+let energyRegen = 0.2;
 
 const unitCost = 50;
 const stPullCost = 5;
@@ -37,6 +38,8 @@ let selectedUpgradeTargetId = null;
 let unitPopupEscapeHandler = null;
 let isLoading = false;
 let currentTechPanelTab = "techTree";
+let isTowerStatsExpanded = false;
+let savedTowerStatsScrollTop = 0;
 
 // --- Build Pool & Shop State ---
 const FOCUS_TOWER_MULTIPLIER = 10;
@@ -62,6 +65,7 @@ let startWaveAvailable = false;
 let gameSpeedMultiplier = 1;
 let currentEnemySortMode = "default";
 let autoWaveTimeout = null;
+let isStoppingBattle = false;
 
 // --- Auto Battle State ---
 let autoStartWaveEnabled = false;
@@ -77,6 +81,7 @@ let autoRepeatSessionStats = {
   totalGold: 0,
   totalSt: 0,
   ticketsEarned: 0,
+  towerStatsMap: {}, // Stores accumulated XP, Damage, and Kills across runs
 };
 
 // --- Stage Accumulators (End-of-Stage Summary) ---
@@ -87,12 +92,14 @@ let stageWaveStEarned = 0;
 // --- Options & User Settings ---
 let showClearPopup = false;
 let showBacklineCooldown = false;
+let showFrontlineCooldown = false;
 let swapDeploymentLayout = false;
 let simplifyBattleLog = false;
 let hideMaxedTech = false;
 let unpinTopBar = false;
 let showMoreStats = false;
 let showTechBonus = false;
+let showEffectiveDamage = false;
 
 // --- Inventory & UI Display Filters ---
 let inventoryFilter = "all"; // "all", "Main", "Rear"
@@ -104,8 +111,10 @@ let upgradeMenuSortMode = "level";
 let upgradeMenuSortOrder = "desc";
 let boostMenuSortMode = "level";
 let boostMenuSortOrder = "desc";
+let energyMode = "hide";
 
 let currentStagePage = 0;
+let damageDecimal = 1;
 const stagesPerPage = 10;
 
 // --- Primary Data Collections ---
@@ -247,6 +256,7 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
           : {},
       showClearPopup,
       showBacklineCooldown,
+      showFrontlineCooldown,
       swapDeploymentLayout,
       timestamp: Date.now(),
       simplifyBattleLog,
@@ -254,11 +264,17 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       unpinTopBar,
       showMoreStats,
       showTechBonus,
+      showEffectiveDamage,
       autoStartWaveEnabled,
       autoRepeatEnabled: false,
       autoRepeatCount: 0,
       focusedMainTowerKey,
       focusedRearTowerKey,
+      inventoryFilter,
+      inventorySort,
+      inventorySortAsc,
+      currentInventoryTab,
+      energyMode,
     };
 
     localStorage.setItem(getSaveKey(slot), JSON.stringify(saveData));
@@ -286,20 +302,30 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     currentSaveSlot = slot;
 
     // Restore Settings & Options
-    showClearPopup = saved.showClearPopup ?? true;
-    showBacklineCooldown = saved.showBacklineCooldown ?? true;
+    showClearPopup = saved.showClearPopup ?? false;
+    showBacklineCooldown = saved.showBacklineCooldown ?? false;
+    showFrontlineCooldown = saved.showFrontlineCooldown ?? false;
     swapDeploymentLayout = saved.swapDeploymentLayout ?? false;
     simplifyBattleLog = saved.simplifyBattleLog ?? false;
     hideMaxedTech = saved.hideMaxedTech ?? false;
     unpinTopBar = saved.unpinTopBar ?? false;
-    showMoreStats = saved.showMoreStats ?? true;
-    showTechBonus = saved.showTechBonus ?? true;
+    showMoreStats = saved.showMoreStats ?? false;
+    showTechBonus = saved.showTechBonus ?? false;
+    showEffectiveDamage = saved.showEffectiveDamage ?? false;
+
+    syncOptionCheckboxes();
+    setUnpinTopBar(unpinTopBar);
 
     const clearCb = document.getElementById("toggle-clear-popup-checkbox");
     if (clearCb) clearCb.checked = showClearPopup;
 
     const cdCb = document.getElementById("toggle-backline-cooldown-checkbox");
     if (cdCb) cdCb.checked = showBacklineCooldown;
+
+    const frontlineCdCb = document.getElementById(
+      "toggle-frontline-cooldown-checkbox",
+    );
+    if (frontlineCdCb) frontlineCdCb.checked = showFrontlineCooldown;
 
     const swapCb = document.getElementById("toggle-swap-layout-checkbox");
     if (swapCb) swapCb.checked = swapDeploymentLayout;
@@ -310,9 +336,17 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     const hideTechCb = document.getElementById(
       "toggle-hide-maxed-tech-checkbox",
     );
+
+    const effDmgCb = document.getElementById(
+      "toggle-show-effective-damage-checkbox",
+    );
+    if (effDmgCb) effDmgCb.checked = showEffectiveDamage;
+
     if (hideTechCb) hideTechCb.checked = hideMaxedTech;
 
     setUnpinTopBar(unpinTopBar);
+
+    if (saved.energyMode) energyMode = saved.energyMode;
 
     // Restore Progression Data
     if (Number.isInteger(saved.unlockedStageIndex)) {
@@ -459,12 +493,43 @@ function loadCampaignProgress(slot = currentSaveSlot) {
       focusedRearTowerKey = null;
     }
 
-    const activeStageList = currentCampaignTabMode === "challenge" ? challengeStages : stages;
-    const activeStageId = currentCampaignTabMode === "challenge" ? selectedChallengeStageId : selectedStageId;
+    const activeStageList =
+      currentCampaignTabMode === "challenge" ? challengeStages : stages;
+    const activeStageId =
+      currentCampaignTabMode === "challenge"
+        ? selectedChallengeStageId
+        : selectedStageId;
     const activeStage = activeStageList.find((s) => s.id === activeStageId);
 
     if (activeStage) {
       currentStagePage = Math.floor(activeStage.index / stagesPerPage);
+    }
+
+    // Restore Inventory Sort & Filter State
+    if (saved.inventoryFilter) inventoryFilter = saved.inventoryFilter;
+    if (saved.inventorySort) inventorySort = saved.inventorySort;
+    if (typeof saved.inventorySortAsc === "boolean") {
+      inventorySortAsc = saved.inventorySortAsc;
+    }
+    if (saved.currentInventoryTab)
+      currentInventoryTab = saved.currentInventoryTab;
+
+    // Sync Inventory Controls UI
+    if (inventoryFilterButton) {
+      inventoryFilterButton.textContent = `Filter: ${inventoryFilter}`;
+      inventoryFilterButton.disabled = currentInventoryTab === "warehouse";
+    }
+    if (inventorySortSelect) {
+      inventorySortSelect.value = inventorySort;
+      inventorySortSelect.disabled = currentInventoryTab === "warehouse";
+    }
+    if (inventorySortOrderButton) {
+      inventorySortOrderButton.textContent = inventorySortAsc ? "▲" : "▼";
+      inventorySortOrderButton.disabled = currentInventoryTab === "warehouse";
+    }
+    if (inventoryTitleBtn) {
+      inventoryTitleBtn.textContent =
+        currentInventoryTab === "inventory" ? "Inventory ⇄" : "Warehouse ⇄";
     }
 
     updateUI();
@@ -488,6 +553,13 @@ function handleSaveToSlot(slot) {
     addLog("Cannot save while inside an active battle.");
     return;
   }
+
+  // Add confirmation prompt
+  const confirmed = confirm(
+    `Are you sure you want to overwrite Save Slot ${slot}?`,
+  );
+  if (!confirmed) return;
+
   saveCampaignProgress(slot, true);
   setActiveSaveSlot(slot);
   closeSaveLoadMenus();
@@ -583,6 +655,108 @@ function savePreset(index) {
    4. HELPER & UTILITY FUNCTIONS
    ========================================================================== */
 
+function syncOptionCheckboxes() {
+  const optionMap = [
+    { id: "toggle-clear-popup-checkbox", val: showClearPopup },
+    { id: "toggle-backline-cooldown-checkbox", val: showBacklineCooldown },
+    { id: "toggle-frontline-cooldown-checkbox", val: showFrontlineCooldown },
+    { id: "toggle-swap-layout-checkbox", val: swapDeploymentLayout },
+    { id: "toggle-simplified-log-checkbox", val: simplifyBattleLog },
+    { id: "toggle-hide-maxed-tech-checkbox", val: hideMaxedTech },
+    { id: "toggle-unpin-topbar-checkbox", val: unpinTopBar },
+    { id: "toggle-show-more-stats-checkbox", val: showMoreStats },
+    { id: "toggle-show-tech-bonus-checkbox", val: showTechBonus },
+    { id: "toggle-show-effective-damage-checkbox", val: showEffectiveDamage },
+  ];
+
+  for (const { id, val } of optionMap) {
+    const checkbox = document.getElementById(id);
+    if (checkbox) {
+      checkbox.checked = Boolean(val);
+    }
+  }
+}
+
+function getStageEnergyRegenMultiplier(
+  currentStageId,
+  targetMaxStageNumber = 60,
+) {
+  const currentStage = stages.find((s) => s.id === currentStageId);
+  if (!currentStage) return 1.0;
+
+  const stageNumber = currentStage.index + 1; // Stage 1-1 = 1, Stage 6-10 = 60
+  const ratio = Math.min(1.0, stageNumber / targetMaxStageNumber);
+
+  return Number(ratio.toFixed(2));
+}
+
+function processInventoryStaminaRegenOnStageClear(stageId) {
+  const regenMultiplier = getStageEnergyRegenMultiplier(stageId);
+  const regenAmount = Number((energyRegen * regenMultiplier).toFixed(2));
+
+  for (const unit of inventory) {
+    if (unit.energy < (unit.maxEnergy || 100)) {
+      unit.energy = Math.min(
+        unit.maxEnergy || 100,
+        Number((unit.energy + regenAmount).toFixed(2)),
+      );
+    }
+  }
+}
+
+function processTowerStaminaOnWaveClear() {
+  const deployed = [...deployedUnits, ...deployedBaseUnits].filter(
+    (u) => u !== null,
+  );
+
+  for (const unit of deployed) {
+    unit.energy = Math.max(0, Number((unit.energy - 0.1).toFixed(2)));
+    if (unit.energy <= 0) {
+      addLog(
+        `⚠️ ${getUnitName(unit)} is FATIGUED! (70% Damage & 90% Reward Penalty).`,
+      );
+    }
+  }
+}
+
+function formatGameNumber(num) {
+  if (!Number.isFinite(num)) return "0";
+  const rounded = Math.round(num);
+  if (Math.abs(rounded) >= 1e9) {
+    return (rounded / 1e9).toFixed(2) + "B";
+  }
+  if (Math.abs(rounded) >= 1e6) {
+    return (rounded / 1e6).toFixed(2) + "M";
+  }
+  if (Math.abs(rounded) >= 1e3) {
+    return (rounded / 1e3).toFixed(1) + "K";
+  }
+  return rounded.toLocaleString();
+}
+
+function accumulateSessionTowerStats(towerStatsList) {
+  if (!autoRepeatSessionStats.towerStatsMap) {
+    autoRepeatSessionStats.towerStatsMap = {};
+  }
+  for (const t of towerStatsList) {
+    const key = `${t.name}_${t.category}`;
+    if (!autoRepeatSessionStats.towerStatsMap[key]) {
+      autoRepeatSessionStats.towerStatsMap[key] = {
+        name: t.name,
+        category: t.category,
+        level: t.level,
+        xpGained: 0,
+        damageDealt: 0,
+        kills: 0,
+      };
+    }
+    autoRepeatSessionStats.towerStatsMap[key].level = t.level; // Keep highest level reached
+    autoRepeatSessionStats.towerStatsMap[key].xpGained += t.xpGained || 0;
+    autoRepeatSessionStats.towerStatsMap[key].damageDealt += t.damageDealt || 0;
+    autoRepeatSessionStats.towerStatsMap[key].kills += t.kills || 0;
+  }
+}
+
 function getSelectedStage() {
   if (currentCampaignTabMode === "challenge") {
     return (
@@ -606,8 +780,27 @@ function cancelAutoRepeat() {
 }
 
 function getStageRewardMultiplier(stageId) {
+  const stage = stages.find((s) => s.id === stageId) || getSelectedStage();
   const clears = stageClearCounts[stageId] || 0;
-  return Math.max(0.15, 1 - clears * (1 / MAX_CLEARS_FOR_REWARDS));
+
+  // Base decay steps across 4 clears down to a 15% floor (0.15)
+  const decayPerClear = (1.0 - 0.15) / MAX_CLEARS_FOR_REWARDS;
+  const baseDecay = Math.max(
+    0.15,
+    Number((1 - clears * decayPerClear).toFixed(3)),
+  );
+
+  // Clears 1 to 4 (clears 0-3): Apply +50% for Bosses, +25% for Minibosses
+  if (clears < MAX_CLEARS_FOR_REWARDS && stage) {
+    const isBoss = stage.isBoss || stage.stageInWorld === 10;
+    const isMiniboss = stage.stageInWorld === 5;
+    const bossBonus = isBoss ? 1.5 : isMiniboss ? 1.25 : 1.0;
+
+    return Number((baseDecay * bossBonus).toFixed(3));
+  }
+
+  // 4+ Clears (Overfarm Floor): Bonus expires, leaving all stages at the 0.15x base floor
+  return baseDecay;
 }
 
 function isBattleRunning() {
@@ -639,7 +832,8 @@ function getLegendaryTowerCount() {
     ...deployedBaseUnits.filter((u) => u !== null),
   ];
 
-  return allUnits.filter((unit) => getUnitData(unit).rarity === "Legendary").length;
+  return allUnits.filter((unit) => getUnitData(unit).rarity === "Legendary")
+    .length;
 }
 
 function getUnitData(unit) {
@@ -722,14 +916,19 @@ function getEffectiveTowerWeight(typeKey, pool, rarityCounts) {
   const data = unitTypes[typeKey];
   const rarity = data?.rarity || "Common";
   const category = data?.category || "Main";
-  const baseWeight = RARITY_WEIGHTS[rarity] ?? 10;
+
+  // Use category-specific weight table
+  const weightTable =
+    category === "Rear" ? REAR_RARITY_WEIGHTS : MAIN_RARITY_WEIGHTS;
+  const baseWeight = weightTable[rarity] ?? 10;
   const count = rarityCounts[rarity] || 1;
 
   const isFocusUnlocked =
     typeof getTechNodeLevel === "function" &&
     getTechNodeLevel("eco_focus_pool") >= 1;
 
-  const focusedKey = category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
+  const focusedKey =
+    category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
 
   const isFocused = isFocusUnlocked && typeKey === focusedKey;
   const focusedRarity = focusedKey
@@ -738,7 +937,6 @@ function getEffectiveTowerWeight(typeKey, pool, rarityCounts) {
   const focusedInPool =
     isFocusUnlocked && focusedKey && pool.includes(focusedKey);
 
-  // Return standard weight if focus tech is locked, no tower is focused, or there's only 1 tower of this rarity
   if (!focusedInPool || focusedRarity !== rarity || count <= 1) {
     return baseWeight;
   }
@@ -748,6 +946,128 @@ function getEffectiveTowerWeight(typeKey, pool, rarityCounts) {
   const wUnfocused = (count * baseWeight) / (M + count - 1);
 
   return isFocused ? M * wUnfocused : wUnfocused;
+}
+
+function getRearMaxCooldownTicks(unit) {
+  // If unit has an existing cooldownMax computed at battle setup, prefer it
+  if (unit.cooldownMax && !isBattleRunning()) {
+    return Math.round(unit.cooldownMax);
+  }
+
+  const baseFireRate = unit.fireRate || unitTypes[unit.type]?.fireRate || 1.0;
+
+  // 1. Tech Tree Bonus Multiplier
+  const techBonus =
+    typeof getTechMultiplier === "function"
+      ? getTechMultiplier("rear_cooldown")
+      : typeof getTechNodeLevel === "function"
+        ? 1 - getTechNodeLevel("rear_cooldown_speed") * 0.05
+        : 1.0;
+
+  // 2. Challenge / Relic Multipliers
+  const challengeBonus =
+    typeof getChallengeCooldownMultiplier === "function"
+      ? getChallengeCooldownMultiplier(unit.category || "Rear")
+      : 1.0;
+
+  // Compute total recurring max CD in ticks (excludes temporary -45% first-shot reduction)
+  const baseTicks = 100 / Math.max(0.1, baseFireRate);
+  const effectiveTicks = baseTicks * techBonus * challengeBonus;
+
+  return Math.max(1, Math.round(effectiveTicks));
+}
+
+function getStageEnergyRegenMultiplier(currentStageId) {
+  const currentStage = stages.find((s) => s.id === currentStageId);
+  if (!currentStage) return 1.0;
+
+  // Highest unlocked stage index (e.g. 49 for 5-10 in 0-indexed array)
+  const maxUnlockedIndex = Math.max(1, unlockedStageIndex);
+  const currentStageIndex = currentStage.index;
+
+  // Ratio scales from (1 / maxUnlockedIndex) up to 1.0 (100%)
+  const ratio = (currentStageIndex + 1) / (maxUnlockedIndex + 1);
+  return Math.max(0.1, Number(ratio.toFixed(2))); // 10% floor safety valve
+}
+
+function getFatigueRewardMultiplier() {
+  const deployed = [...deployedUnits, ...deployedBaseUnits].filter(
+    (u) => u !== null,
+  );
+  const hasFatiguedUnit = deployed.some((u) => u.energy <= 0);
+
+  // If any unit is fatigued, apply 90% reward hit (0.1x gold/XP payout)
+  return hasFatiguedUnit ? 0.1 : 1.0;
+}
+
+function setShowEffectiveDamage(enabled) {
+  showEffectiveDamage = Boolean(enabled);
+  const cb = document.getElementById("toggle-show-effective-damage-checkbox");
+  if (cb && cb.checked !== showEffectiveDamage)
+    cb.checked = showEffectiveDamage;
+  saveCampaignProgress();
+}
+
+function setShowFrontlineCooldown(enabled) {
+  showFrontlineCooldown = Boolean(enabled);
+  const checkbox = document.getElementById(
+    "toggle-frontline-cooldown-checkbox",
+  );
+  if (checkbox && checkbox.checked !== showFrontlineCooldown) {
+    checkbox.checked = showFrontlineCooldown;
+  }
+  renderDeployment();
+  saveCampaignProgress();
+}
+
+function getCooldownDisplayText(unit, isRunning) {
+  const fr = unit.fireRate || 1;
+  const shotsPerTick = fr / 100;
+
+  // 1. Multi-shot per tick (FR > 100)
+  if (shotsPerTick > 1) {
+    const formattedShots = Number(shotsPerTick.toFixed(1));
+    return {
+      text: `CD: ${formattedShots} shots/tick`,
+      isReady: true,
+    };
+  }
+
+  // 2. Single-shot towers (FR <= 100)
+  const maxCd = unit.cooldownMax ?? 100 / Math.max(0.1, fr);
+
+  if (!isRunning) {
+    const ticks = Math.ceil(maxCd);
+    return {
+      text: `CD: ${ticks} tick${ticks > 1 ? "s" : ""}`,
+      isReady: false,
+    };
+  }
+
+  // Live battle: Math.max(1, ...) ensures 1 tick is the minimum display floor
+  const cdVal = Math.max(0, unit.cooldown ?? 0);
+  const ticksRemaining = Math.max(1, Math.ceil(cdVal));
+
+  return {
+    text: `CD: ${ticksRemaining} tick${ticksRemaining > 1 ? "s" : ""}`,
+    isReady: ticksRemaining === 1,
+  };
+}
+
+// Global helper for background-proof delays
+function startWorkerIntermission(durationMs, callback, tag = null) {
+  cancelWorkerIntermission();
+  activeIntermissionCallback = callback;
+  gameTicker.postMessage({
+    action: "startIntermission",
+    duration: durationMs,
+    tag,
+  });
+}
+
+function cancelWorkerIntermission() {
+  activeIntermissionCallback = null;
+  gameTicker.postMessage({ action: "stop" });
 }
 
 /* ==========================================================================
@@ -824,8 +1144,8 @@ function getGrowthFactor(level, unitCategory) {
         { lvl: 1, factor: 1.75 },
         { lvl: 10, factor: 1.55 }, // Drop 1
         { lvl: 30, factor: 1.33 }, // Drop 2
-        { lvl: 50, factor: 1.20 }, // Drop 3
-        { lvl: 150, factor: 1.20 },
+        { lvl: 50, factor: 1.2 }, // Drop 3
+        { lvl: 150, factor: 1.2 },
       ]
     : [
         { lvl: 1, factor: 1.65 },
@@ -895,10 +1215,13 @@ function calculateWaveXp(enemyLevel, towerLevel) {
   } else {
     // Hard logarithmic taper past +30 (smoothly anchored at gap 30)
     const baseAt30 = 26 * Math.log(1 + 30 / 26); // ~19.95
-    const slopeAt30 = 26 / 56;                  // ~0.464
+    const slopeAt30 = 26 / 56; // ~0.464
     const taperStrength = 3.0;
 
-    effectiveDiff = baseAt30 + taperStrength * Math.log(1 + (slopeAt30 / taperStrength) * (levelDiff - 30));
+    effectiveDiff =
+      baseAt30 +
+      taperStrength *
+        Math.log(1 + (slopeAt30 / taperStrength) * (levelDiff - 30));
   }
 
   const multiplier = Math.pow(1.21, effectiveDiff);
@@ -963,11 +1286,11 @@ function awardWaveXpToDeployedUnits(enemyLevel) {
     if (rawRatio >= CLIFF_THRESHOLD) {
       // Plateau (25% to 100% target share): Scales from 50% to 100% base XP
       const progress = (rawRatio - CLIFF_THRESHOLD) / (1 - CLIFF_THRESHOLD);
-      contributionRatio = 0.50 + 0.50 * progress;
+      contributionRatio = 0.5 + 0.5 * progress;
     } else {
       // Cliff (0% to 25% target share): Drops quadratically from 50% down to 0%
       const cliffProgress = rawRatio / CLIFF_THRESHOLD;
-      contributionRatio = 0.50 * Math.pow(cliffProgress, 2);
+      contributionRatio = 0.5 * Math.pow(cliffProgress, 2);
     }
 
     const baseEarnedXp = Math.round(rawBaseXp * contributionRatio);
@@ -1029,7 +1352,7 @@ function recalculateUnitStats(unit) {
   // Retrieve Challenge Bonuses
   const cbDamage =
     typeof getChallengeBonusLevel === "function"
-      ? getChallengeBonusLevel("cb_base_damage")
+      ? getChallengeBonusLevel("cb_base_damage") * 0.5
       : 0;
   const cbFireRate =
     typeof getChallengeBonusLevel === "function"
@@ -1096,14 +1419,14 @@ function recalculateUnitStats(unit) {
     (
       (unit.baseFireRate + unit.upgradeBonuses.fireRate) *
       fireRateMultiplier
-    ).toFixed(2),
+    ).toFixed(4),
   );
   unit.rawRange = unit.baseRange + unit.upgradeBonuses.range;
   unit.rawArmorPen = unit.baseArmorPen + unit.upgradeBonuses.armorPen;
 
   // 3. Final Stats (Including Tech Tree & Challenge Bonuses)
   unit.damage = Math.round(unit.rawDamage * techDmgMult);
-  unit.fireRate = Number((unit.rawFireRate * techFrMult).toFixed(2));
+  unit.fireRate = Number((unit.rawFireRate * techFrMult).toFixed(4));
   unit.range = unit.rawRange + techRangeBonus;
   unit.armorPen = unit.rawArmorPen + techArmorPenBonus;
 
@@ -1150,6 +1473,14 @@ function restoreUnit(unit) {
       ? unit.totalKills
       : 0;
 
+  // Set max energy to 100 and update legacy 10/10 values
+  if (!unit.maxEnergy || unit.maxEnergy === 10) {
+    unit.maxEnergy = 100;
+  }
+  if (!Number.isFinite(unit.energy) || unit.energy > unit.maxEnergy) {
+    unit.energy = unit.maxEnergy;
+  }
+
   if (!unit.upgradeBonuses || typeof unit.upgradeBonuses !== "object") {
     unit.upgradeBonuses = {
       damage: Math.max(0, (unit.damage ?? baseData.damage) - baseData.damage),
@@ -1192,34 +1523,36 @@ function getAvailableUnitPool(category = "Main") {
 }
 
 function getRandomUnitTypeByCategory(category = "Main") {
-  const pool = getAvailableUnitPool(category);
-  if (!pool || pool.length === 0) {
-    return category === "Rear" ? "base_battery" : "cannon";
-  }
+  const availableKeys = getAvailableUnitPool(category);
+  const weightTable =
+    category === "Rear" ? REAR_RARITY_WEIGHTS : MAIN_RARITY_WEIGHTS;
 
-  // Count towers per rarity tier in the current pool
-  const rarityCounts = {};
-  for (const typeKey of pool) {
-    const rarity = unitTypes[typeKey]?.rarity || "Common";
-    rarityCounts[rarity] = (rarityCounts[rarity] || 0) + 1;
-  }
+  // 1. Find which rarities exist in the current unlocked pool
+  const presentRarities = [
+    ...new Set(availableKeys.map((k) => unitTypes[k]?.rarity || "Common")),
+  ];
 
-  let totalWeight = 0;
-  for (const typeKey of pool) {
-    totalWeight += getEffectiveTowerWeight(typeKey, pool, rarityCounts);
-  }
+  // 2. Roll for Rarity Tier first
+  let totalRarityWeight = 0;
+  presentRarities.forEach((r) => (totalRarityWeight += weightTable[r] || 10));
 
-  let roll = Math.random() * totalWeight;
+  let rarityRoll = Math.random() * totalRarityWeight;
+  let selectedRarity = presentRarities[0];
 
-  for (const typeKey of pool) {
-    const weight = getEffectiveTowerWeight(typeKey, pool, rarityCounts);
-    if (roll < weight) {
-      return typeKey;
+  for (const r of presentRarities) {
+    const w = weightTable[r] || 10;
+    if (rarityRoll < w) {
+      selectedRarity = r;
+      break;
     }
-    roll -= weight;
+    rarityRoll -= w;
   }
 
-  return pool[0];
+  // 3. Pick a unit uniformly from the chosen rarity tier
+  const matchingUnits = availableKeys.filter(
+    (k) => (unitTypes[k]?.rarity || "Common") === selectedRarity,
+  );
+  return matchingUnits[Math.floor(Math.random() * matchingUnits.length)];
 }
 
 function buyRandomUnit(category = "Main") {
@@ -1293,6 +1626,8 @@ function createUnit(type) {
     category: baseData.category || "Main",
     level: 1,
     xp: 0,
+    energy: 100,
+    maxEnergy: 100,
     upgradeCount: 0,
     waveDamage: 0,
     totalDamage: 0,
@@ -1316,7 +1651,11 @@ function getUpgradeCost(unit) {
   if (!unit) return 0;
 
   const rarity = (unit.rarity || "common").toLowerCase();
-  const category = (unit.category || unitTypes[unit.type]?.category || "Main").toLowerCase();
+  const category = (
+    unit.category ||
+    unitTypes[unit.type]?.category ||
+    "Main"
+  ).toLowerCase();
 
   const lookupKey = `${rarity}_${category}`;
 
@@ -1378,13 +1717,11 @@ function upgradeUnit(targetId, duplicateId) {
   const rarityMult = rarityMultipliers[getUnitData(target).rarity] || 1.0;
 
   const increases = {
-    // 50% base damage boost x Rarity Multiplier (Minimum +5)
-    damage: Math.max(5, Math.round(target.baseDamage * 0.5 * rarityMult)),
+    damage: Math.max(0, Math.round(target.baseDamage * 0.5 * rarityMult)),
 
-    // 35% base fire rate boost x Rarity Multiplier (Minimum +0.25)
     fireRate: Math.max(
-      0.25,
-      Number((target.baseFireRate * 0.35 * rarityMult).toFixed(2)),
+      0,
+      Number((target.baseFireRate * 0.35 * rarityMult).toFixed(4)),
     ),
   };
 
@@ -1439,6 +1776,15 @@ function deployUnit(unitId, slotIndex) {
     return;
   }
 
+  // Check for duplicate tower type in field deployment
+  const isAlreadyDeployed = deployedUnits.some(
+    (u) => u !== null && u.type === unit.type,
+  );
+  if (isAlreadyDeployed) {
+    addLog(`You can only deploy one ${getUnitName(unit)} at a time!`);
+    return;
+  }
+
   inventory.splice(inventoryIndex, 1);
   unit.location = slotIndex + 1;
   unit.selectedSlot = slotIndex;
@@ -1478,6 +1824,15 @@ function deployBaseUnit(unitId, baseSlotIndex) {
   const unit = inventory[inventoryIndex];
   if (unit.category !== "Rear") {
     addLog("Only Rear towers can be deployed in Base slots.");
+    return;
+  }
+
+  // Check for duplicate tower type in backline deployment
+  const isAlreadyDeployed = deployedBaseUnits.some(
+    (u) => u !== null && u.type === unit.type,
+  );
+  if (isAlreadyDeployed) {
+    addLog(`You can only deploy one ${getUnitName(unit)} at a time!`);
     return;
   }
 
@@ -1687,7 +2042,10 @@ function applyPreset(index) {
     const invIdx = inventory.findIndex((u) => u.id === unitId);
     if (invIdx !== -1) {
       const unit = inventory[invIdx];
-      if ((unit.category || "Main") === "Main") {
+      const isAlreadyDeployed = deployedUnits.some(
+        (u) => u !== null && u.type === unit.type,
+      );
+      if ((unit.category || "Main") === "Main" && !isAlreadyDeployed) {
         inventory.splice(invIdx, 1);
         unit.location = slotIndex + 1;
         unit.selectedSlot = slotIndex;
@@ -1789,6 +2147,21 @@ function renderDeployment() {
       const name = document.createElement("strong");
       name.textContent = `Slot ${i + 1}: ${data.name}`;
 
+      const cdBadge = document.createElement("span");
+      cdBadge.className = "cooldown-badge";
+      cdBadge.id = `main-slot-cd-${i}`;
+
+      if (showFrontlineCooldown) {
+        const { text, isReady } = getCooldownDisplayText(
+          unit,
+          isBattleRunning(),
+        );
+        cdBadge.textContent = text;
+        cdBadge.classList.toggle("ready", isReady);
+      } else {
+        cdBadge.style.display = "none";
+      }
+
       const reqXp = getRequiredXp(unit);
       const details = document.createElement("p");
       details.textContent = `Level ${unit.level} (${unit.xp}/${reqXp} XP) | Upgrades: ${unit.upgradeCount} | Range: ${unit.range}`;
@@ -1828,7 +2201,7 @@ function renderDeployment() {
       buttonRow.className = "slot-buttons";
       buttonRow.append(rangeButton, targetSelect, recallButton);
 
-      slot.append(name, details, xpTrack, buttonRow, rangeInfo);
+      slot.append(name, cdBadge, details, xpTrack, buttonRow, rangeInfo);
     }
 
     slots.appendChild(slot);
@@ -1859,15 +2232,15 @@ function renderDeployment() {
 
         if (showBacklineCooldown) {
           if (isBattleRunning()) {
+            // Live Battle: Read remaining cooldown directly from unit state
             const currentCd = Math.max(0, Math.ceil(unit.cooldown || 0));
             cdBadge.textContent =
-              currentCd > 0 ? `⏳ CD: ${currentCd} ticks` : `⚡ Ready`;
+              currentCd > 0 ? `CD: ${currentCd} ticks` : `⚡ Ready`;
             if (currentCd === 0) cdBadge.classList.add("ready");
           } else {
-            const maxCd = Math.round(
-              unit.cooldownMax || 100 / Math.max(0.1, unit.fireRate),
-            );
-            cdBadge.textContent = `⏳ CD: ${maxCd} ticks`;
+            // Out of Battle: Show max recurring CD calculated with all permanent buffs
+            const maxCd = getRearMaxCooldownTicks(unit);
+            cdBadge.textContent = `CD: ${maxCd} ticks`;
           }
         } else {
           cdBadge.style.display = "none";
@@ -1971,17 +2344,78 @@ function renderWarehouseList() {
 function renderInventory() {
   inventoryList.replaceChildren();
 
+  const inventoryPanel = document.querySelector(".inventory-panel");
+  const isExpanded = inventoryPanel?.classList.contains("expanded");
+
+  // Manage Energy Select visibility (Only visible when inventory is expanded)
+  let energySelect = document.getElementById("inventory-energy-mode-select");
+  if (!energySelect && isExpanded) {
+    const controlsContainer = document.querySelector(".inventory-controls");
+    if (controlsContainer) {
+      energySelect = document.createElement("select");
+      energySelect.id = "inventory-energy-mode-select";
+
+      const modes = [
+        { value: "hide", label: "Energy: Off" },
+        { value: "show", label: "Energy: Show" },
+        { value: "sort", label: "Energy: Sort (High→Low)" },
+        { value: "sort_rev", label: "Energy: Sort (Low→High)" },
+      ];
+
+      for (const m of modes) {
+        const opt = document.createElement("option");
+        opt.value = m.value;
+        opt.textContent = m.label;
+        energySelect.appendChild(opt);
+      }
+
+      energySelect.addEventListener("change", (e) => {
+        energyMode = e.target.value;
+        saveCampaignProgress();
+        renderInventory();
+      });
+
+      controlsContainer.appendChild(energySelect);
+    }
+  }
+
+  if (energySelect) {
+    energySelect.value = energyMode;
+    energySelect.style.display = isExpanded ? "inline-block" : "none";
+  }
+
   if (currentInventoryTab === "warehouse") {
     renderWarehouseList();
     return;
   }
 
-  const isExpanded = document
-    .querySelector(".inventory-panel")
-    ?.classList.contains("expanded");
-
   const dir = inventorySortAsc ? -1 : 1;
 
+  // 1. Pre-calculate peak levels
+  const typeMaxLevels = {};
+  const typeMaxLevelsByUpgrade = {};
+
+  for (const unit of inventory) {
+    const uType = unit.type || "unknown";
+    const uLvl = Number(unit.level) || 1;
+    const uUpg = Number(unit.upgradeCount) || 0;
+
+    if (!typeMaxLevels[uType] || uLvl > typeMaxLevels[uType]) {
+      typeMaxLevels[uType] = uLvl;
+    }
+
+    if (!typeMaxLevelsByUpgrade[uUpg]) {
+      typeMaxLevelsByUpgrade[uUpg] = {};
+    }
+    if (
+      !typeMaxLevelsByUpgrade[uUpg][uType] ||
+      uLvl > typeMaxLevelsByUpgrade[uUpg][uType]
+    ) {
+      typeMaxLevelsByUpgrade[uUpg][uType] = uLvl;
+    }
+  }
+
+  // 2. Filter & Sort inventory
   const filteredInventory = inventory
     .filter((unit) => {
       const cat = unit.category || "Main";
@@ -1990,33 +2424,83 @@ function renderInventory() {
     })
     .slice()
     .sort((a, b) => {
+      // --- ENERGY PRE-SORTING (Evaluated before main sort mode) ---
+      if (energyMode === "sort" || energyMode === "sort_rev") {
+        const energyA = a.energy ?? 100;
+        const energyB = b.energy ?? 100;
+        if (energyA !== energyB) {
+          return energyMode === "sort" ? energyB - energyA : energyA - energyB;
+        }
+      }
+
       const dataA = getUnitData(a);
       const dataB = getUnitData(b);
 
-      if (inventorySort === "name") {
-        const nameA = dataA.name || "";
-        const nameB = dataB.name || "";
-        // Alphabetical sort (A to Z baseline, inverted by dir toggle)
-        const nameComparison = nameA.localeCompare(nameB);
-        if (nameComparison !== 0) return nameComparison * dir;
-        return (b.level - a.level) * dir;
-      } else if (inventorySort === "rarity") {
-        const rarityA = rarityRank[dataA.rarity] || 0;
-        const rarityB = rarityRank[dataB.rarity] || 0;
-        if (rarityB !== rarityA) return (rarityB - rarityA) * dir;
-        return (b.level - a.level) * dir;
-      } else if (inventorySort === "upgrades") {
-        if ((b.upgradeCount || 0) !== (a.upgradeCount || 0)) {
-          return ((b.upgradeCount || 0) - (a.upgradeCount || 0)) * dir;
+      const rarityA = rarityRank[dataA.rarity] || 0;
+      const rarityB = rarityRank[dataB.rarity] || 0;
+      const nameA = dataA.name || "";
+      const nameB = dataB.name || "";
+
+      const lvlA = Number(a.level) || 1;
+      const lvlB = Number(b.level) || 1;
+      const upgA = Number(a.upgradeCount) || 0;
+      const upgB = Number(b.upgradeCount) || 0;
+
+      let primaryDiff = 0;
+
+      switch (inventorySort) {
+        case "level":
+          primaryDiff = lvlB - lvlA;
+          if (primaryDiff !== 0) return primaryDiff * dir;
+          if (rarityB !== rarityA) return rarityB - rarityA;
+          if (nameA.localeCompare(nameB) !== 0)
+            return nameA.localeCompare(nameB);
+          return b.id - a.id;
+
+        case "rarity": {
+          primaryDiff = rarityB - rarityA;
+          if (primaryDiff !== 0) return primaryDiff * dir;
+
+          const maxLvlA = typeMaxLevels[a.type] || lvlA;
+          const maxLvlB = typeMaxLevels[b.type] || lvlB;
+
+          if (maxLvlB !== maxLvlA) return maxLvlB - maxLvlA;
+          if (nameA.localeCompare(nameB) !== 0)
+            return nameA.localeCompare(nameB);
+          if (lvlB !== lvlA) return lvlB - lvlA;
+          return b.id - a.id;
         }
-        return (b.level - a.level) * dir;
-      } else if (inventorySort === "newest") {
-        if (b.id !== a.id) return (b.id - a.id) * dir;
-        return (b.level - a.level) * dir;
-      } else {
-        // Default: Level
-        if (b.level !== a.level) return (b.level - a.level) * dir;
-        return ((b.upgradeCount || 0) - (a.upgradeCount || 0)) * dir;
+
+        case "upgrades": {
+          primaryDiff = upgB - upgA;
+          if (primaryDiff !== 0) return primaryDiff * dir;
+
+          if (rarityB !== rarityA) return rarityB - rarityA;
+
+          const upgBucket = typeMaxLevelsByUpgrade[upgA] || {};
+          const maxLvlA = upgBucket[a.type] || lvlA;
+          const maxLvlB = upgBucket[b.type] || lvlB;
+
+          if (maxLvlB !== maxLvlA) return maxLvlB - maxLvlA;
+
+          if (nameA.localeCompare(nameB) !== 0)
+            return nameA.localeCompare(nameB);
+          if (lvlB !== lvlA) return lvlB - lvlA;
+          return b.id - a.id;
+        }
+
+        case "name":
+          primaryDiff = nameA.localeCompare(nameB);
+          if (primaryDiff !== 0) return primaryDiff * dir;
+          if (lvlB !== lvlA) return lvlB - lvlA;
+          return b.id - a.id;
+
+        case "newest":
+        default:
+          primaryDiff = b.id - a.id;
+          if (primaryDiff !== 0) return primaryDiff * dir;
+          if (lvlB !== lvlA) return lvlB - lvlA;
+          return nameA.localeCompare(nameB);
       }
     });
 
@@ -2027,6 +2511,7 @@ function renderInventory() {
     return;
   }
 
+  // Render cards
   for (const unit of filteredInventory) {
     const data = getUnitData(unit);
     const rarityClass = (data.rarity || "Common").toLowerCase();
@@ -2045,15 +2530,41 @@ function renderInventory() {
     const label = document.createElement("span");
     label.className = "unit-card-level";
 
+    const isEnergyActive = energyMode !== "hide";
+    const energyText = isEnergyActive ? ` · E: ${Math.round(unit.energy ?? 100)}` : "";
+
+    // Omit rarity text whenever Energy Mode is enabled
     if (isExpanded) {
-      label.textContent = `Lv. ${unit.level} · ${data.rarity} · ${unit.upgradeCount}`;
+      if (isEnergyActive) {
+        label.textContent = `Lv. ${unit.level} · ${unit.upgradeCount}${energyText}`;
+      } else {
+        label.textContent = `Lv. ${unit.level} · ${data.rarity} · ${unit.upgradeCount}`;
+      }
     } else if (inventorySort === "upgrades") {
-      label.textContent = `Upgrades: ${unit.upgradeCount}`;
+      label.textContent = `Upgrades: ${unit.upgradeCount}${energyText}`;
     } else {
       label.textContent = `Lv. ${unit.level}`;
     }
 
     card.append(name, label);
+
+    // Apply Full-Card Energy Tint Overlay (shade changes based on energy level)
+    if (isEnergyActive) {
+      const curEnergy = unit.energy ?? 100;
+      const maxEnergy = unit.maxEnergy ?? 100;
+      const pct = Math.max(0, Math.min(100, (curEnergy / maxEnergy) * 100));
+
+      const overlay = document.createElement("div");
+      overlay.className = "energy-card-overlay";
+
+      const hue = Math.round((pct / 100) * 200);
+      
+      overlay.style.background = `hsla(${hue}, 85%, 45%, 0.28)`;
+
+      overlay.style.width = "100%";
+      card.prepend(overlay);
+    }
+
     card.addEventListener("click", () => openUnitPopup(unit.id));
     inventoryList.appendChild(card);
   }
@@ -2090,18 +2601,28 @@ function openUnitPopup(unitId) {
   popup.setAttribute("role", "dialog");
   popup.setAttribute("aria-modal", "true");
 
-  function createButton(text, disabled, onClick) {
-    const button = document.createElement("button");
-    button.textContent = text;
-    button.disabled = disabled;
-    button.addEventListener("click", onClick);
-    return button;
+  const isFatigued = (unit.energy ?? 100) <= 0;
+  if (isFatigued) {
+    const banner = document.createElement("div");
+    banner.className = "fatigue-banner-top";
+    banner.style.cssText = `
+      width: 100%;
+      background: #7f1d1d;
+      color: #fca5a5;
+      text-align: center;
+      padding: 6px 0;
+      font-weight: bold;
+      font-size: 0.85rem;
+      border-radius: 6px 6px 0 0;
+      margin-bottom: 8px;
+    `;
+    banner.textContent = "⚠️ FATIGUED (-70% All Stats & -90% Rewards)";
+    popup.appendChild(banner);
   }
 
   const header = document.createElement("div");
   header.className = "unit-popup-header";
 
-  // --- Title & Lock Button Row (Same Line) ---
   const titleRow = document.createElement("div");
   titleRow.style.display = "flex";
   titleRow.style.alignItems = "center";
@@ -2120,9 +2641,8 @@ function openUnitPopup(unitId) {
 
   titleRow.append(title, lockBtn);
 
-  // Subtitle (Placed Below Title Row)
   const subtitle = document.createElement("p");
-  subtitle.textContent = `Level ${unit.level} · Upgrades: ${unit.upgradeCount}`;
+  subtitle.textContent = `Level ${unit.level} · ${data.rarity} · ${unit.upgradeCount}`;
   subtitle.className = "unit-popup-subtitle";
   subtitle.style.margin = "4px 0 0 0";
 
@@ -2141,99 +2661,204 @@ function openUnitPopup(unitId) {
   const details = document.createElement("div");
   details.className = "unit-popup-details";
 
-  const reqXp = getRequiredXp(unit);
-  const powerScore = calculateTowerPower(unit);
+  const currentStage = getSelectedStage();
+  let targetEnemyLevel = currentStage?.enemyLevel || 1;
 
-  // 1. Calculate Single-Target DPS
-  const rawDps = unit.damage * (unit.fireRate / 10);
-  const dpsVal =
-    typeof formatGameNumber === "function"
-      ? formatGameNumber(rawDps)
-      : rawDps.toFixed(1);
+  // --- 1. HTML Stats Table ---
+  const statsTable = document.createElement("table");
+  statsTable.className = "popup-stats-table";
+  details.appendChild(statsTable);
 
-  // 2. Format (+Tech & Challenge) Bonuses
   const damageMultiplier = 1 + 0.1 * (unit.level - 1);
-  const fireRateMultiplier = 1 + 0.01 * (unit.level - 1);
-
   const unbuffedBaseDamage = Math.round(
     (data.damage + unit.upgradeBonuses.damage) * damageMultiplier,
   );
-  const unbuffedBaseFireRate = Number(
-    (
-      (data.fireRate + unit.upgradeBonuses.fireRate) *
-      fireRateMultiplier
-    ).toFixed(2),
-  );
-
   const totalBonusDmg = Math.max(0, unit.damage - unbuffedBaseDamage);
-  const totalBonusFr = Number(
-    Math.max(0, unit.fireRate - unbuffedBaseFireRate).toFixed(2),
-  );
 
-  const formattedDmg =
-    typeof formatGameNumber === "function"
-      ? formatGameNumber(unit.damage)
-      : unit.damage;
+  let effBadge = null;
 
-  const dmgStr =
-    showTechBonus && totalBonusDmg > 0
-      ? `${formattedDmg} (+${typeof formatGameNumber === "function" ? formatGameNumber(totalBonusDmg) : totalBonusDmg})`
-      : `${formattedDmg}`;
+  function updateDynamicStats() {
+    statsTable.replaceChildren();
 
-  const frStr =
-    showTechBonus && totalBonusFr > 0
-      ? `${unit.fireRate} (+${totalBonusFr})`
-      : `${unit.fireRate}`;
+    const levelMult = showEffectiveDamage
+      ? getLevelAdvantageMultiplier(unit.level, targetEnemyLevel)
+      : 1.0;
 
-  const techRange = unit.range - (unit.rawRange ?? unit.range);
-  const rangeStr =
-    showTechBonus && techRange > 0
-      ? `${unit.range} (+${techRange})`
-      : `${unit.range}`;
+    const effPct = Math.round(levelMult * 100);
+    if (effBadge) {
+      effBadge.textContent = `(${effPct}% Eff.)`;
+      effBadge.className = `eff-percent-badge ${effPct > 100 ? "buff" : effPct < 100 ? "debuff" : "neutral"}`;
+    }
 
-  const rawArmorPenVal =
-    typeof unit.rawArmorPen === "number"
-      ? unit.rawArmorPen
-      : (unit.armorPen ?? 0);
-  const armorPenVal = unit.armorPen ?? 0;
-  const techArmorPen = armorPenVal - rawArmorPenVal;
+    const effectiveDamage = Number((unit.damage * levelMult).toFixed(2));
+    const effectiveBonusDmg = Number((totalBonusDmg * levelMult).toFixed(2));
 
-  const armorPenStr =
-    showTechBonus && techArmorPen > 0
-      ? `${armorPenVal} (+${techArmorPen})`
-      : `${armorPenVal}`;
+    const rawDps = effectiveDamage * (unit.fireRate / 10);
+    const dpsVal =
+      typeof formatGameNumber === "function"
+        ? formatGameNumber(rawDps)
+        : Number(rawDps.toFixed(2));
 
-  // 3. Build Stats Grid
-  const popupStatsList = [];
+    const maxLaneLength = maxSlots + 1;
+    const effectiveRange = Math.min(unit.range, Math.ceil(maxLaneLength / 2));
+    const powerScore = Math.round(rawDps * effectiveRange);
 
-  popupStatsList.push(`Class: ${unit.category || "Main"}`);
-  if (showMoreStats) {
-    popupStatsList.push(
-      `Power Score: ${typeof formatGameNumber === "function" ? formatGameNumber(powerScore) : powerScore}`,
+    const formattedDmg =
+      typeof formatGameNumber === "function"
+        ? formatGameNumber(effectiveDamage)
+        : Number(effectiveDamage.toFixed(damageDecimal));
+
+    const formattedBonusDmg =
+      typeof formatGameNumber === "function"
+        ? formatGameNumber(effectiveBonusDmg)
+        : Number(effectiveBonusDmg.toFixed(damageDecimal));
+
+    const dmgStr =
+      showTechBonus && effectiveBonusDmg > 0
+        ? `${formattedDmg} (+${formattedBonusDmg})`
+        : `${formattedDmg}`;
+
+    const fireRateMultiplier = 1 + 0.01 * (unit.level - 1);
+    const unbuffedBaseFireRate = Number(
+      (
+        (data.fireRate + unit.upgradeBonuses.fireRate) *
+        fireRateMultiplier
+      ).toFixed(2),
     );
+    const totalBonusFr = Number(
+      Math.max(0, unit.fireRate - unbuffedBaseFireRate).toFixed(2),
+    );
+
+    const frStr =
+      showTechBonus && totalBonusFr > 0
+        ? `${unit.fireRate.toFixed(2)} (+${totalBonusFr.toFixed(2)})`
+        : `${unit.fireRate.toFixed(2)}`;
+
+    const techRange = unit.range - (unit.rawRange ?? unit.range);
+    const rangeStr =
+      showTechBonus && techRange > 0
+        ? `${unit.range} (+${techRange})`
+        : `${unit.range}`;
+
+    const rawArmorPenVal =
+      typeof unit.rawArmorPen === "number"
+        ? unit.rawArmorPen
+        : (unit.armorPen ?? 0);
+    const armorPenVal = unit.armorPen ?? 0;
+    const techArmorPen = armorPenVal - rawArmorPenVal;
+
+    const armorPenStr =
+      showTechBonus && techArmorPen > 0
+        ? `${armorPenVal} (+${techArmorPen})`
+        : `${armorPenVal}`;
+
+    const lifetimeDmgVal = Math.round(unit.totalDamage || 0);
+    const formattedLifetimeDmg =
+      typeof formatGameNumber === "function"
+        ? formatGameNumber(lifetimeDmgVal)
+        : lifetimeDmgVal.toLocaleString();
+
+    const powerScoreStr = `Power Score: ${formatGameNumber(powerScore)}`;
+    const lifetimeDamageStr = `Lifetime Dmg: ${formattedLifetimeDmg}`;
+
+    // --- Dynamic Energy Formatting ---
+    const energyVal = unit.energy ?? 100;
+    const maxEnergyVal = unit.maxEnergy ?? 100;
+    const isFatigued = energyVal <= 0;
+
+    const energyColorClass =
+      energyVal <= 0
+        ? "energy-red"
+        : energyVal < 10
+          ? "energy-orange"
+          : "energy-white";
+
+    const energyStr = `Energy: <span class="${energyColorClass}">${energyVal.toFixed(1)} / ${maxEnergyVal}</span>${
+      isFatigued ? ' <span class="energy-red">⚠️</span>' : ""
+    }`;
+
+    const popupStatsRows = showMoreStats
+      ? [
+          [`Type: ${unit.category || "Main"}`, powerScoreStr],
+          [`Fire rate: ${frStr}`, `DPS: ${dpsVal}`],
+          [`Damage: ${dmgStr}`, `Range: ${rangeStr}`],
+          [`Armor Pen: ${armorPenStr}`, lifetimeDamageStr],
+          [energyStr, ""], // Expanded: Energy on the LEFT
+        ]
+      : [
+          [`Type: ${unit.category || "Main"}`, `Range: ${rangeStr}`],
+          [`Fire rate: ${frStr}`, `Armor Pen: ${armorPenStr}`],
+          [`Damage: ${dmgStr}`, energyStr], // Simplified: Energy on the RIGHT
+        ];
+
+    for (const [leftStat, rightStat] of popupStatsRows) {
+      const tr = document.createElement("tr");
+
+      const tdLeft = document.createElement("td");
+      tdLeft.innerHTML = leftStat;
+      tr.appendChild(tdLeft);
+
+      const tdRight = document.createElement("td");
+      tdRight.innerHTML = rightStat;
+      tr.appendChild(tdRight);
+
+      statsTable.appendChild(tr);
+    }
   }
 
-  popupStatsList.push(`Rarity: ${data.rarity}`);
-  if (showMoreStats) {
-    popupStatsList.push(`DPS: ${dpsVal}`);
+  // --- 2. Dynamic Effectiveness Controls Row ---
+  if (showEffectiveDamage) {
+    const effRow = document.createElement("div");
+    effRow.className = "effective-damage-row";
+
+    const labelText = document.createElement("span");
+    labelText.className = "eff-label";
+    labelText.textContent = "Target Lvl:";
+
+    const baseMax = targetEnemyLevel + 10;
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.className = "eff-slider";
+    slider.min = "1";
+    slider.max = String(baseMax);
+    slider.value = String(targetEnemyLevel);
+
+    const numInput = document.createElement("input");
+    numInput.type = "number";
+    numInput.className = "eff-num-input";
+    numInput.min = "1";
+    numInput.value = String(targetEnemyLevel);
+
+    effBadge = document.createElement("span");
+    effBadge.className = "eff-percent-badge";
+
+    const syncLevel = (val) => {
+      let parsed = parseInt(val, 10);
+      if (isNaN(parsed)) return;
+      parsed = Math.max(1, parsed);
+
+      const dynamicMax = Math.max(baseMax, parsed);
+      slider.max = String(dynamicMax);
+
+      targetEnemyLevel = parsed;
+      slider.value = String(parsed);
+      numInput.value = String(parsed);
+      updateDynamicStats();
+    };
+
+    slider.addEventListener("input", (e) => syncLevel(e.target.value));
+    numInput.addEventListener("input", (e) => syncLevel(e.target.value));
+
+    effRow.append(labelText, slider, numInput, effBadge);
+    details.appendChild(effRow);
   }
 
-  popupStatsList.push(
-    `Damage: ${dmgStr}`,
-    `Fire rate: ${frStr}`,
-    `Range: ${rangeStr}`,
-    `Armor Pen: ${armorPenStr}`,
-    `Lifetime Dmg: ${typeof formatGameNumber === "function" ? formatGameNumber(unit.totalDamage || 0) : (unit.totalDamage || 0).toLocaleString()}`,
-  );
-
-  for (const text of popupStatsList) {
-    const p = document.createElement("p");
-    p.textContent = text;
-    details.appendChild(p);
-  }
-
+  updateDynamicStats();
   popup.appendChild(details);
 
+  // --- 3. XP Progress Bar ---
+  const reqXp = getRequiredXp(unit);
   const xpContainer = document.createElement("div");
   xpContainer.className = "unit-popup-xp";
 
@@ -2264,7 +2889,6 @@ function openUnitPopup(unitId) {
   headerRight.className = "xp-header-right";
 
   headerRight.append(xpValue, boostBtn);
-
   xpHeader.append(xpTitle, headerRight);
 
   const xpTrack = document.createElement("div");
@@ -2278,6 +2902,7 @@ function openUnitPopup(unitId) {
   xpContainer.append(xpHeader, xpTrack);
   popup.appendChild(xpContainer);
 
+  // --- 4. Actions ---
   const actions = document.createElement("div");
   actions.className = "unit-popup-actions";
 
@@ -2308,7 +2933,19 @@ function openUnitPopup(unitId) {
     }
   }
 
-  if (slotSelect.options.length === 0) {
+  const isDuplicateDeployed = isRear
+    ? deployedBaseUnits.some((u) => u !== null && u.type === unit.type)
+    : deployedUnits.some((u) => u !== null && u.type === unit.type);
+
+  if (isDuplicateDeployed) {
+    slotSelect.options.length = 0;
+    const fallbackOption = document.createElement("option");
+    fallbackOption.value = "";
+    fallbackOption.textContent = "Already Deployed (1 Max)";
+    fallbackOption.disabled = true;
+    fallbackOption.selected = true;
+    slotSelect.appendChild(fallbackOption);
+  } else if (slotSelect.options.length === 0) {
     const fallbackOption = document.createElement("option");
     fallbackOption.value = "";
     fallbackOption.textContent = isRear
@@ -2322,12 +2959,16 @@ function openUnitPopup(unitId) {
   const cannotDeploy =
     stageEntered ||
     isBattleRunning() ||
+    isDuplicateDeployed ||
     slotSelect.options.length === 0 ||
     (!isRear && getDeployedCount() >= getMaxDeployedUnits());
 
   slotSelect.disabled = cannotDeploy;
 
-  const deployButton = createButton("Deploy", cannotDeploy, () => {
+  const deployButton = document.createElement("button");
+  deployButton.textContent = "Deploy";
+  deployButton.disabled = cannotDeploy;
+  deployButton.addEventListener("click", () => {
     const slotIndex = Number(slotSelect.value);
     closeUnitPopup();
     if (isRear) deployBaseUnit(unit.id, slotIndex);
@@ -2340,11 +2981,10 @@ function openUnitPopup(unitId) {
 
   deployContainer.append(deployLabel, deployRow);
 
-  const upgradeButton = createButton(
-    "Upgrade",
-    stageEntered || isBattleRunning(),
-    () => openUpgradeMenu(unit.id),
-  );
+  const upgradeButton = document.createElement("button");
+  upgradeButton.textContent = "Upgrade";
+  upgradeButton.disabled = stageEntered || isBattleRunning();
+  upgradeButton.addEventListener("click", () => openUpgradeMenu(unit.id));
 
   actions.append(deployContainer, upgradeButton);
   popup.appendChild(actions);
@@ -2452,26 +3092,97 @@ function openUpgradeMenu(targetId) {
     return;
   }
 
+  // Pre-calculate peak levels for family tiebreakers
+  const typeMaxLevels = {};
+  const typeMaxLevelsByUpgrade = {};
+  for (const unit of inventory) {
+    const uType = unit.type || "unknown";
+    const uLvl = Number(unit.level) || 1;
+    const uUpg = Number(unit.upgradeCount) || 0;
+
+    if (!typeMaxLevels[uType] || uLvl > typeMaxLevels[uType]) {
+      typeMaxLevels[uType] = uLvl;
+    }
+    if (!typeMaxLevelsByUpgrade[uUpg]) {
+      typeMaxLevelsByUpgrade[uUpg] = {};
+    }
+    if (
+      !typeMaxLevelsByUpgrade[uUpg][uType] ||
+      uLvl > typeMaxLevelsByUpgrade[uUpg][uType]
+    ) {
+      typeMaxLevelsByUpgrade[uUpg][uType] = uLvl;
+    }
+  }
+
+  const dir = upgradeMenuSortOrder === "asc" ? -1 : 1;
+
   duplicates.sort((a, b) => {
     const dataA = getUnitData(a);
     const dataB = getUnitData(b);
-    let comparison = 0;
 
-    if (upgradeMenuSortMode === "name") {
-      comparison = (dataA.name || "").localeCompare(dataB.name || "");
-    } else if (upgradeMenuSortMode === "rarity") {
-      const rarityA =
-        typeof rarityRank !== "undefined" ? rarityRank[dataA.rarity] || 0 : 0;
-      const rarityB =
-        typeof rarityRank !== "undefined" ? rarityRank[dataB.rarity] || 0 : 0;
-      comparison = rarityB - rarityA;
-    } else if (upgradeMenuSortMode === "upgrades") {
-      comparison = (b.upgradeCount || 0) - (a.upgradeCount || 0);
-    } else {
-      comparison = b.level - a.level;
+    const rarityA =
+      (typeof rarityRank !== "undefined" ? rarityRank[dataA.rarity] : 0) || 0;
+    const rarityB =
+      (typeof rarityRank !== "undefined" ? rarityRank[dataB.rarity] : 0) || 0;
+    const nameA = dataA.name || "";
+    const nameB = dataB.name || "";
+
+    const lvlA = Number(a.level) || 1;
+    const lvlB = Number(b.level) || 1;
+    const upgA = Number(a.upgradeCount) || 0;
+    const upgB = Number(b.upgradeCount) || 0;
+
+    let primaryDiff = 0;
+
+    switch (upgradeMenuSortMode) {
+      case "level":
+        primaryDiff = lvlB - lvlA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (rarityB !== rarityA) return rarityB - rarityA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        return b.id - a.id;
+
+      case "rarity": {
+        primaryDiff = rarityB - rarityA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+
+        const maxLvlA = typeMaxLevels[a.type] || lvlA;
+        const maxLvlB = typeMaxLevels[b.type] || lvlB;
+
+        if (maxLvlB !== maxLvlA) return maxLvlB - maxLvlA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return b.id - a.id;
+      }
+
+      case "upgrades": {
+        primaryDiff = upgB - upgA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+
+        if (rarityB !== rarityA) return rarityB - rarityA;
+
+        const upgBucket = typeMaxLevelsByUpgrade[upgA] || {};
+        const maxLvlA = upgBucket[a.type] || lvlA;
+        const maxLvlB = upgBucket[b.type] || lvlB;
+
+        if (maxLvlB !== maxLvlA) return maxLvlB - maxLvlA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return b.id - a.id;
+      }
+
+      case "name":
+        primaryDiff = nameA.localeCompare(nameB);
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return b.id - a.id;
+
+      default:
+        primaryDiff = b.id - a.id;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return nameA.localeCompare(nameB);
     }
-
-    return upgradeMenuSortOrder === "asc" ? -comparison : comparison;
   });
 
   for (const duplicate of duplicates) {
@@ -2588,7 +3299,6 @@ function openBoostMenu(targetId) {
     return;
   }
 
-  // Helper function to calculate granted XP bonus for sorting
   function getXpYield(candidate) {
     if (typeof getConsumeXpBonus === "function") {
       return getConsumeXpBonus(candidate, target);
@@ -2602,29 +3312,108 @@ function openBoostMenu(targetId) {
     );
   }
 
+  // Pre-calculate peak levels for family tiebreakers
+  const typeMaxLevels = {};
+  const typeMaxLevelsByUpgrade = {};
+  for (const unit of inventory) {
+    const uType = unit.type || "unknown";
+    const uLvl = Number(unit.level) || 1;
+    const uUpg = Number(unit.upgradeCount) || 0;
+
+    if (!typeMaxLevels[uType] || uLvl > typeMaxLevels[uType]) {
+      typeMaxLevels[uType] = uLvl;
+    }
+    if (!typeMaxLevelsByUpgrade[uUpg]) {
+      typeMaxLevelsByUpgrade[uUpg] = {};
+    }
+    if (
+      !typeMaxLevelsByUpgrade[uUpg][uType] ||
+      uLvl > typeMaxLevelsByUpgrade[uUpg][uType]
+    ) {
+      typeMaxLevelsByUpgrade[uUpg][uType] = uLvl;
+    }
+  }
+
+  const dir = boostMenuSortOrder === "asc" ? -1 : 1;
+
   candidates.sort((a, b) => {
     const dataA = getUnitData(a);
     const dataB = getUnitData(b);
-    let comparison = 0;
 
-    if (boostMenuSortMode === "name") {
-      comparison = (dataA.name || "").localeCompare(dataB.name || "");
-    } else if (boostMenuSortMode === "rarity") {
-      const rarityA =
-        typeof rarityRank !== "undefined" ? rarityRank[dataA.rarity] || 0 : 0;
-      const rarityB =
-        typeof rarityRank !== "undefined" ? rarityRank[dataB.rarity] || 0 : 0;
-      comparison = rarityB - rarityA;
-    } else if (boostMenuSortMode === "upgrades") {
-      comparison = (b.upgradeCount || 0) - (a.upgradeCount || 0);
-    } else if (boostMenuSortMode === "xp") {
-      // Sort directly by Granted XP yield
-      comparison = getXpYield(b) - getXpYield(a);
-    } else {
-      comparison = b.level - a.level;
+    const rarityA =
+      (typeof rarityRank !== "undefined" ? rarityRank[dataA.rarity] : 0) || 0;
+    const rarityB =
+      (typeof rarityRank !== "undefined" ? rarityRank[dataB.rarity] : 0) || 0;
+    const nameA = dataA.name || "";
+    const nameB = dataB.name || "";
+
+    const lvlA = Number(a.level) || 1;
+    const lvlB = Number(b.level) || 1;
+    const upgA = Number(a.upgradeCount) || 0;
+    const upgB = Number(b.upgradeCount) || 0;
+
+    let primaryDiff = 0;
+
+    switch (boostMenuSortMode) {
+      case "level":
+        primaryDiff = lvlB - lvlA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (rarityB !== rarityA) return rarityB - rarityA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        return b.id - a.id;
+
+      case "rarity": {
+        primaryDiff = rarityB - rarityA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+
+        const maxLvlA = typeMaxLevels[a.type] || lvlA;
+        const maxLvlB = typeMaxLevels[b.type] || lvlB;
+
+        if (maxLvlB !== maxLvlA) return maxLvlB - maxLvlA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return b.id - a.id;
+      }
+
+      case "upgrades": {
+        primaryDiff = upgB - upgA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+
+        if (rarityB !== rarityA) return rarityB - rarityA;
+
+        const upgBucket = typeMaxLevelsByUpgrade[upgA] || {};
+        const maxLvlA = upgBucket[a.type] || lvlA;
+        const maxLvlB = upgBucket[b.type] || lvlB;
+
+        if (maxLvlB !== maxLvlA) return maxLvlB - maxLvlA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return b.id - a.id;
+      }
+
+      case "xp": {
+        const yieldA = getXpYield(a);
+        const yieldB = getXpYield(b);
+        primaryDiff = yieldB - yieldA;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (rarityB !== rarityA) return rarityB - rarityA;
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        if (nameA.localeCompare(nameB) !== 0) return nameA.localeCompare(nameB);
+        return b.id - a.id;
+      }
+
+      case "name":
+        primaryDiff = nameA.localeCompare(nameB);
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return b.id - a.id;
+
+      default:
+        primaryDiff = b.id - a.id;
+        if (primaryDiff !== 0) return primaryDiff * dir;
+        if (lvlB !== lvlA) return lvlB - lvlA;
+        return nameA.localeCompare(nameB);
     }
-
-    return boostMenuSortOrder === "asc" ? -comparison : comparison;
   });
 
   for (const candidate of candidates) {
@@ -2701,6 +3490,7 @@ function handleWaveCleared() {
 
   awardWaveST();
   awardWaveXpToDeployedUnits(stage.enemyLevel ?? 1);
+  processTowerStaminaOnWaveClear();
 
   // --- 1. CHALLENGE MODE PROGRESSION ---
   if (stage.isChallenge) {
@@ -2759,18 +3549,18 @@ function handleWaveCleared() {
     const totalGoldFromStage = stageEnemyGoldEarned + mainStageGold;
     const totalStFromStage = stEarned + stageWaveStEarned;
 
-    // Track Session Rewards
+    // Track Session Rewards for Challenge Mode (No accumulators)
     if (autoRepeatEnabled) {
       autoRepeatSessionStats.runsCompleted++;
       autoRepeatSessionStats.totalGold += totalGoldFromStage;
       autoRepeatSessionStats.totalSt += totalStFromStage;
-      if (earnedTicket) autoRepeatSessionStats.ticketsEarned++;
     } else {
       autoRepeatSessionStats = {
         runsCompleted: 1,
         totalGold: totalGoldFromStage,
         totalSt: totalStFromStage,
-        ticketsEarned: earnedTicket ? 1 : 0,
+        ticketsEarned: 0,
+        towerStatsMap: {},
       };
     }
 
@@ -2807,7 +3597,8 @@ function handleWaveCleared() {
       stage.reward *
         (0.1 / stage.waves.length) *
         getStageRewardMultiplier(stage.id) *
-        techMult,
+        techMult *
+        getFatigueRewardMultiplier(),
     ),
   );
   gold += minorWaveGold;
@@ -2832,14 +3623,12 @@ function handleWaveCleared() {
       isAutoWaveUnlocked() &&
       autoStartWaveEnabled
     ) {
-      if (autoWaveTimeout !== null) clearTimeout(autoWaveTimeout);
-
-      autoWaveTimeout = setTimeout(() => {
-        autoWaveTimeout = null;
+      // 300ms pause via worker (unthrottled in background tabs)
+      startWorkerIntermission(autoStageDelay, () => {
         if (stageEntered && startWaveAvailable && !isBattleRunning()) {
           startWave();
         }
-      }, autoStageDelay);
+      });
     }
     return;
   }
@@ -2880,7 +3669,9 @@ function handleWaveCleared() {
 
   const mainStageGold = Math.max(
     15,
-    Math.floor(stage.reward * 0.9 * multiplier * techMult),
+    Math.floor(
+      stage.reward * 0.9 * multiplier * techMult * getFatigueRewardMultiplier(),
+    ),
   );
   gold += mainStageGold;
 
@@ -2913,18 +3704,21 @@ function handleWaveCleared() {
     kills: unit.stageKills || 0,
   }));
 
-  // Track Session Rewards
+  // Track Session Rewards & Accumulate Tower Performance for Campaign Mode
   if (autoRepeatEnabled) {
     autoRepeatSessionStats.runsCompleted++;
     autoRepeatSessionStats.totalGold += totalGoldFromStage;
     autoRepeatSessionStats.totalSt += totalStFromStage;
+    accumulateSessionTowerStats(towerStats);
   } else {
     autoRepeatSessionStats = {
       runsCompleted: 1,
       totalGold: totalGoldFromStage,
       totalSt: totalStFromStage,
       ticketsEarned: 0,
+      towerStatsMap: {},
     };
+    accumulateSessionTowerStats(towerStats);
   }
 
   if (unlockedNewStage) {
@@ -2938,6 +3732,7 @@ function handleWaveCleared() {
   updateUI();
   renderStageSelect();
   renderDeployment();
+  processInventoryStaminaRegenOnStageClear(stage.id);
 
   openStageClearedPopup({
     stageId: stage.id,
@@ -2978,9 +3773,9 @@ function handleWaveCleared() {
     }
 
     if (shouldRepeat) {
-      setTimeout(() => {
+      startWorkerIntermission(autoWorldDelay, () => {
         enterStage();
-      }, autoWorldDelay);
+      });
     } else {
       // Reset session stats when target runs finish
       autoRepeatSessionStats = {
@@ -2988,6 +3783,7 @@ function handleWaveCleared() {
         totalGold: 0,
         totalSt: 0,
         ticketsEarned: 0,
+        towerStatsMap: {},
       };
     }
   }
@@ -3184,94 +3980,108 @@ function renderStageSelect() {
     buttonGroup.appendChild(exitButton);
   }
 
-  // Render Auto-Repeat Option if unlocked
+  // --- STABLE AUTO-REPEAT COMPONENT RENDERING ---
   if (typeof isAutoRepeatUnlocked === "function" && isAutoRepeatUnlocked()) {
-    const autoRepeatRow = document.createElement("div");
-    const isActivelyRepeating =
-      autoRepeatEnabled && (stageEntered || isBattleRunning());
+    let autoRepeatRow = document.getElementById("persistent-auto-repeat-row");
 
-    // Apply state class: '.running' when in an active run, '.active' when enabled on standby
-    if (isActivelyRepeating) {
-      autoRepeatRow.className = "auto-repeat-row running";
-    } else if (autoRepeatEnabled) {
-      autoRepeatRow.className = "auto-repeat-row active";
-    } else {
-      autoRepeatRow.className = "auto-repeat-row";
+    if (!autoRepeatRow) {
+      autoRepeatRow = document.createElement("div");
+      autoRepeatRow.id = "persistent-auto-repeat-row";
+
+      const repeatCb = document.createElement("input");
+      repeatCb.type = "checkbox";
+      repeatCb.id = "toggle-auto-repeat-checkbox";
+
+      const repeatLabel = document.createElement("label");
+      repeatLabel.htmlFor = "toggle-auto-repeat-checkbox";
+
+      const countInput = document.createElement("input");
+      countInput.type = "number";
+      countInput.id = "auto-repeat-count-input";
+      countInput.min = "0";
+      countInput.title = "0 = Unlimited repeats";
+
+      const hint = document.createElement("small");
+      hint.id = "auto-repeat-hint";
+
+      const updateDisplay = () => {
+        const activeRun =
+          autoRepeatEnabled && (stageEntered || isBattleRunning());
+
+        if (activeRun) {
+          autoRepeatRow.className = "auto-repeat-row running";
+          repeatLabel.textContent = "Repeating:";
+          countInput.style.display = "none";
+
+          const remainingStr =
+            autoRepeatCount === 0
+              ? "∞"
+              : `${autoRepeatRemaining > 0 ? autoRepeatRemaining : autoRepeatCount}`;
+          hint.textContent = `${remainingStr} left`;
+        } else {
+          autoRepeatRow.className = autoRepeatEnabled
+            ? "auto-repeat-row active"
+            : "auto-repeat-row";
+          repeatLabel.textContent = "Auto-Repeat World:";
+          countInput.style.display = "inline-block";
+          hint.textContent =
+            autoRepeatCount === 0
+              ? "(∞)"
+              : autoRepeatCount === 1
+                ? `(${autoRepeatCount} repeat)`
+                : `(${autoRepeatCount} repeats)`;
+        }
+      };
+
+      const handleToggle = (e) => {
+        e.preventDefault();
+        autoRepeatEnabled = !autoRepeatEnabled;
+        autoStartWaveEnabled = autoRepeatEnabled;
+
+        if (autoRepeatEnabled) {
+          autoRepeatRemaining = autoRepeatCount;
+          autoRepeatSessionStats = {
+            runsCompleted: 0,
+            totalGold: 0,
+            totalSt: 0,
+            ticketsEarned: 0,
+            towerStatsMap: {},
+          };
+        } else {
+          autoRepeatRemaining = 0;
+        }
+
+        updateDisplay();
+        if (typeof renderAutoWaveControl === "function")
+          renderAutoWaveControl();
+        saveCampaignProgress();
+      };
+
+      repeatCb.addEventListener("pointerdown", handleToggle);
+      repeatLabel.addEventListener("pointerdown", handleToggle);
+
+      countInput.addEventListener("input", (e) => {
+        const val = Math.max(0, parseInt(e.target.value) || 0);
+        autoRepeatCount = val;
+        autoRepeatRemaining = val;
+        updateDisplay();
+        saveCampaignProgress();
+      });
+
+      // Attach global updater to row reference so it updates cleanly
+      autoRepeatRow._updateAutoRepeatUI = updateDisplay;
+      autoRepeatRow.append(repeatCb, repeatLabel, countInput, hint);
     }
 
-    const repeatCb = document.createElement("input");
-    repeatCb.type = "checkbox";
-    repeatCb.id = "toggle-auto-repeat-checkbox";
-    repeatCb.checked = autoRepeatEnabled;
+    // Sync input values with current global state on every render tick
+    const cb = autoRepeatRow.querySelector("#toggle-auto-repeat-checkbox");
+    const num = autoRepeatRow.querySelector("#auto-repeat-count-input");
+    if (cb) cb.checked = autoRepeatEnabled;
+    if (num) num.value = String(autoRepeatCount);
+    if (typeof autoRepeatRow._updateAutoRepeatUI === "function") {
+      autoRepeatRow._updateAutoRepeatUI();
+    }
 
-    const repeatLabel = document.createElement("label");
-    repeatLabel.htmlFor = "toggle-auto-repeat-checkbox";
-
-    const countInput = document.createElement("input");
-    countInput.type = "number";
-    countInput.min = "0";
-    countInput.value = String(autoRepeatCount);
-    countInput.title = "0 = Unlimited repeats";
-
-    const hint = document.createElement("small");
-
-    const updateDisplay = () => {
-      const activeRun =
-        autoRepeatEnabled && (stageEntered || isBattleRunning());
-
-      if (activeRun) {
-        autoRepeatRow.className = "auto-repeat-row running";
-        repeatLabel.textContent = "Repeating:";
-        countInput.style.display = "none";
-
-        const remainingStr =
-          autoRepeatCount === 0
-            ? "∞"
-            : `${autoRepeatRemaining > 0 ? autoRepeatRemaining : autoRepeatCount}`;
-        hint.textContent = `${remainingStr} left`;
-      } else {
-        autoRepeatRow.className = autoRepeatEnabled
-          ? "auto-repeat-row active"
-          : "auto-repeat-row";
-        repeatLabel.textContent = "Auto-Repeat World:";
-        countInput.style.display = "inline-block";
-        hint.textContent =
-          autoRepeatCount === 0
-            ? "(∞)"
-            : autoRepeatCount === 1
-              ? `(${autoRepeatCount} repeat)`
-              : `(${autoRepeatCount} repeats)`;
-      }
-    };
-
-    repeatCb.addEventListener("change", (e) => {
-      autoRepeatEnabled = e.target.checked;
-
-      // Sync Auto-Start Wave with Auto-Repeat state
-      autoStartWaveEnabled = autoRepeatEnabled;
-
-      if (autoRepeatEnabled) {
-        autoRepeatRemaining = autoRepeatCount;
-      } else {
-        autoRepeatRemaining = 0;
-      }
-
-      updateDisplay();
-      if (typeof renderAutoWaveControl === "function") renderAutoWaveControl();
-      saveCampaignProgress();
-    });
-
-    countInput.addEventListener("input", (e) => {
-      const val = Math.max(0, parseInt(e.target.value) || 0);
-      autoRepeatCount = val;
-      autoRepeatRemaining = val;
-      updateDisplay();
-      saveCampaignProgress();
-    });
-
-    updateDisplay();
-
-    autoRepeatRow.append(repeatCb, repeatLabel, countInput, hint);
     detailsMain.appendChild(autoRepeatRow);
   }
 
@@ -3301,20 +4111,17 @@ function enterStage() {
   renderStageSelect();
   updateUI();
 
-  // Automatically start Wave 1 on stage entry if Auto-Start is unlocked & enabled
+  // Automatically start Wave 1 on stage entry using the worker timer
   if (
     typeof isAutoWaveUnlocked === "function" &&
     isAutoWaveUnlocked() &&
     autoStartWaveEnabled
   ) {
-    if (autoWaveTimeout !== null) clearTimeout(autoWaveTimeout);
-
-    autoWaveTimeout = setTimeout(() => {
-      autoWaveTimeout = null;
+    startWorkerIntermission(autoStageDelay, () => {
       if (stageEntered && startWaveAvailable && !isBattleRunning()) {
         startWave();
       }
-    }, autoStageDelay);
+    });
   }
 }
 
@@ -3396,11 +4203,14 @@ function awardWaveST() {
   const stage = getSelectedStage();
   const clears = Math.min(5, stageClearCounts[stage.id] || 0);
 
-  // Linearly scale down the chance from 0 to 5 clears
-  const currentDropChance =
+  const baseDropChance =
     startStDropChance - (clears / 5) * (startStDropChance - endStDropChance);
 
-  if (Math.random() < currentDropChance) {
+  // Apply fatigue penalty multiplier (0.1x / 90% reduction if any deployed tower is fatigued)
+  const fatigueMultiplier = getFatigueRewardMultiplier();
+  const effectiveDropChance = baseDropChance * fatigueMultiplier;
+
+  if (Math.random() < effectiveDropChance) {
     st += 1;
     stageWaveStEarned = (stageWaveStEarned || 0) + 1;
     addLog("ST drop! You received 1 ST.");
@@ -3434,6 +4244,14 @@ function resetStageCounters() {
 function openStageClearedPopup(summary) {
   if (!showClearPopup) return;
 
+  // Preserve the current scroll position before destroying the existing overlay
+  const existingStatsList = document.querySelector(
+    "#stage-clear-overlay .tower-stats-list",
+  );
+  if (existingStatsList) {
+    savedTowerStatsScrollTop = existingStatsList.scrollTop;
+  }
+
   document.getElementById("stage-clear-overlay")?.remove();
 
   const overlay = document.createElement("div");
@@ -3456,7 +4274,6 @@ function openStageClearedPopup(summary) {
   subtitle.className = "unit-popup-subtitle";
   subtitle.textContent = summary.stageName;
 
-  // Calculate ST and Gold (Session accumulative vs single run)
   const singleRunSt = summary.stEarned + (summary.waveStEarned || 0);
   const displayTotalGold = isMultiRun
     ? summary.sessionStats.totalGold
@@ -3502,13 +4319,10 @@ function openStageClearedPopup(summary) {
     createRewardItem(`⭐ Stage Clear Bonus ST: +${summary.stEarned}`),
   );
 
-  if (summary.waveStEarned > 0) {
-    rewardsList.appendChild(
-      createRewardItem(`🎲 Wave Drop ST: +${summary.waveStEarned}`),
-    );
-  }
+  rewardsList.appendChild(
+    createRewardItem(`🎲 Wave Drop ST: +${summary.waveStEarned || 0}`),
+  );
 
-  // Display tickets earned (Session aggregate if multi-run)
   const displayTickets = isMultiRun
     ? summary.sessionStats.ticketsEarned
     : summary.earnedTicket
@@ -3538,18 +4352,48 @@ function openStageClearedPopup(summary) {
 
   rewardsBox.appendChild(rewardsList);
 
-  if (summary.towerStats && summary.towerStats.length > 0) {
+  // Safe tower stats resolution with fallback
+  const sessionStatsList =
+    summary.sessionStats && summary.sessionStats.towerStatsMap
+      ? Object.values(summary.sessionStats.towerStatsMap)
+      : [];
+
+  const displayTowerStats =
+    (autoRepeatEnabled || isMultiRun) && sessionStatsList.length > 0
+      ? sessionStatsList
+      : summary.towerStats && summary.towerStats.length > 0
+        ? summary.towerStats
+        : [];
+
+  if (displayTowerStats.length > 0) {
     const details = document.createElement("details");
     details.className = "tower-stats-details";
 
+    // Restore open state if user previously expanded it
+    if (isTowerStatsExpanded) {
+      details.open = true;
+    }
+
     const detailsSummary = document.createElement("summary");
-    detailsSummary.textContent = "📊 View Tower Performance & XP";
+    detailsSummary.textContent = isMultiRun
+      ? "📊 View Session Tower Performance & XP"
+      : "📊 View Tower Performance & XP";
+
+    detailsSummary.addEventListener("click", () => {
+      isTowerStatsExpanded = !details.open;
+    });
+
     details.appendChild(detailsSummary);
 
     const statsList = document.createElement("div");
     statsList.className = "tower-stats-list";
 
-    for (const stat of summary.towerStats) {
+    // Track user scrolling in real time
+    statsList.addEventListener("scroll", () => {
+      savedTowerStatsScrollTop = statsList.scrollTop;
+    });
+
+    for (const stat of displayTowerStats) {
       const card = document.createElement("div");
       card.className = "tower-stat-card";
 
@@ -3557,12 +4401,16 @@ function openStageClearedPopup(summary) {
       header.className = "tower-stat-header";
       header.innerHTML = `<strong>${stat.name}</strong> <span>Lvl ${stat.level}</span>`;
 
+      // Damage is formatted; XP remains exact unformatted integer
+      const formattedDamage = formatGameNumber(stat.damageDealt || 0);
+      const exactXp = (stat.xpGained || 0).toLocaleString();
+
       const metrics = document.createElement("div");
       metrics.className = "tower-stat-metrics";
       metrics.innerHTML = `
-        <span>XP Gained: <strong>+${stat.xpGained}</strong></span>
-        <span>Damage: <strong>${stat.damageDealt.toLocaleString()}</strong></span>
-        <span>Kills: <strong>${stat.kills}</strong></span>
+        <span>XP Gained: <strong>+${exactXp}</strong></span>
+        <span>Damage: <strong>${formattedDamage}</strong></span>
+        <span>Kills: <strong>${stat.kills || 0}</strong></span>
       `;
 
       card.append(header, metrics);
@@ -3571,6 +4419,11 @@ function openStageClearedPopup(summary) {
 
     details.appendChild(statsList);
     popup.append(title, subtitle, rewardsBox, details);
+
+    // Re-apply previous scroll offset right after layout completion
+    requestAnimationFrame(() => {
+      statsList.scrollTop = savedTowerStatsScrollTop;
+    });
   } else {
     popup.append(title, subtitle, rewardsBox);
   }
@@ -3743,43 +4596,65 @@ function closeOptionsMenu() {
 function openPoolInfoModal(category = "Main") {
   document.getElementById("pool-modal-overlay")?.remove();
 
-  const pool = getAvailableUnitPool(category);
+  const pool = getAvailableUnitPool(category); //
+  const weightTable =
+    category === "Rear" ? REAR_RARITY_WEIGHTS : MAIN_RARITY_WEIGHTS;
   const isFocusUnlocked =
     typeof getTechNodeLevel === "function" &&
-    getTechNodeLevel("eco_focus_pool") >= 1;
+    getTechNodeLevel("eco_focus_pool") >= 1; //
 
-  const activeFocusedKey = category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
+  const activeFocusedKey =
+    category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey; //
 
-  const rarityCounts = {};
-  for (const typeKey of pool) {
-    const rarity = unitTypes[typeKey]?.rarity || "Common";
-    rarityCounts[rarity] = (rarityCounts[rarity] || 0) + 1;
+  // 1. Identify present rarities and calculate total tier weight
+  const presentRarities = [
+    ...new Set(pool.map((k) => unitTypes[k]?.rarity || "Common")),
+  ];
+  let totalTierWeight = 0;
+  for (const r of presentRarities) {
+    totalTierWeight += weightTable[r] ?? 10;
   }
 
-  let totalWeight = 0;
+  // 2. Build grouped data with tier-first math
   const rarityGroups = {};
 
-  for (const typeKey of pool) {
-    const data = unitTypes[typeKey];
-    if (!data) continue;
+  for (const rarity of presentRarities) {
+    const tierWeight = weightTable[rarity] ?? 10;
+    const tierChance = (tierWeight / totalTierWeight) * 100;
+    const matchingKeys = pool.filter(
+      (k) => (unitTypes[k]?.rarity || "Common") === rarity,
+    );
 
-    const rarity = data.rarity || "Common";
-    const weight = getEffectiveTowerWeight(typeKey, pool, rarityCounts);
-    const isFocused = isFocusUnlocked && typeKey === activeFocusedKey;
+    // Calculate sub-weights for towers within this specific tier (handles blueprint focus)
+    let totalSubWeight = 0;
+    const towerWeights = matchingKeys.map((typeKey) => {
+      const isFocused = isFocusUnlocked && typeKey === activeFocusedKey;
+      const subWeight = isFocused ? FOCUS_TOWER_MULTIPLIER || 3 : 1;
+      totalSubWeight += subWeight;
+      return { typeKey, subWeight, isFocused };
+    });
 
-    totalWeight += weight;
-
-    if (!rarityGroups[rarity]) {
-      rarityGroups[rarity] = {
-        totalRarityWeight: 0,
-        towers: [],
+    const towers = towerWeights.map(({ typeKey, subWeight, isFocused }) => {
+      const data = unitTypes[typeKey];
+      const individualChance = (
+        tierChance *
+        (subWeight / totalSubWeight)
+      ).toFixed(1);
+      return {
+        ...data,
+        typeKey,
+        chance: individualChance,
+        isFocused,
       };
-    }
+    });
 
-    rarityGroups[rarity].totalRarityWeight += weight;
-    rarityGroups[rarity].towers.push({ ...data, typeKey, weight, isFocused });
+    rarityGroups[rarity] = {
+      groupChance: tierChance.toFixed(1),
+      towers,
+    };
   }
 
+  // 3. Render Modal UI
   const overlay = document.createElement("div");
   overlay.id = "pool-modal-overlay";
   overlay.className = "pool-modal-overlay";
@@ -3809,22 +4684,17 @@ function openPoolInfoModal(category = "Main") {
     if (!rarityGroups[rarity]) continue;
 
     const group = rarityGroups[rarity];
-    const groupChance = ((group.totalRarityWeight / totalWeight) * 100).toFixed(
-      1,
-    );
-
     const section = document.createElement("div");
     section.className = "rarity-section";
 
     const sectionTitle = document.createElement("h4");
     sectionTitle.className = `rarity-title ${rarity.toLowerCase()}`;
-    sectionTitle.textContent = `${rarity} — ${groupChance}%`;
+    sectionTitle.textContent = `${rarity} — ${group.groupChance}%`;
 
     const list = document.createElement("ul");
     list.className = "pool-list";
 
     for (const tower of group.towers) {
-      const towerChance = ((tower.weight / totalWeight) * 100).toFixed(1);
       const item = document.createElement("li");
       item.style.display = "flex";
       item.style.justifyContent = "space-between";
@@ -3833,9 +4703,9 @@ function openPoolInfoModal(category = "Main") {
 
       const textSpan = document.createElement("span");
       if (tower.isFocused) {
-        textSpan.innerHTML = `<strong style="color: #f59e0b;">⭐ ${tower.name}</strong> <span style="color:#f59e0b">(${towerChance}%)</span>`;
+        textSpan.innerHTML = `<strong style="color: #f59e0b;">⭐ ${tower.name}</strong> <span style="color:#f59e0b">(${tower.chance}%)</span>`;
       } else {
-        textSpan.innerHTML = `<strong>${tower.name}</strong> (${towerChance}%)`;
+        textSpan.innerHTML = `<strong>${tower.name}</strong> (${tower.chance}%)`;
       }
       item.appendChild(textSpan);
 
@@ -3891,11 +4761,13 @@ function renderShopPoolInfo() {
 
   for (const cat of ["Main", "Rear"]) {
     const pool = getAvailableUnitPool(cat);
+    const weightTable =
+      cat === "Rear" ? REAR_RARITY_WEIGHTS : MAIN_RARITY_WEIGHTS;
 
     let totalWeight = 0;
     for (const typeKey of pool) {
       const rarity = unitTypes[typeKey]?.rarity || "Common";
-      totalWeight += RARITY_WEIGHTS[rarity] ?? 10;
+      totalWeight += weightTable[rarity] ?? 10;
     }
 
     html += `<div class="pool-category-column"><strong>${cat} Tower Pool:</strong><ul class="pool-list">`;
@@ -3903,7 +4775,7 @@ function renderShopPoolInfo() {
     for (const typeKey of pool) {
       const data = unitTypes[typeKey];
       if (data) {
-        const weight = RARITY_WEIGHTS[data.rarity] ?? 10;
+        const weight = weightTable[data.rarity] ?? 10;
         const dropChance = ((weight / totalWeight) * 100).toFixed(1);
         html += `<li><span class="rarity-tag ${(data.rarity || "common").toLowerCase()}">${data.name}</span> (${dropChance}% - ${data.rarity})</li>`;
       }
@@ -4076,6 +4948,7 @@ inventoryTitleBtn?.addEventListener("click", () => {
   if (inventorySortOrderButton)
     inventorySortOrderButton.disabled = currentInventoryTab === "warehouse";
 
+  saveCampaignProgress();
   renderInventory();
 });
 
@@ -4085,17 +4958,20 @@ inventoryFilterButton?.addEventListener("click", () => {
   else inventoryFilter = "all";
 
   inventoryFilterButton.textContent = `Filter: ${inventoryFilter}`;
+  saveCampaignProgress();
   renderInventory();
 });
 
 inventorySortSelect?.addEventListener("change", (e) => {
   inventorySort = e.target.value;
+  saveCampaignProgress();
   renderInventory();
 });
 
 inventorySortOrderButton?.addEventListener("click", () => {
   inventorySortAsc = !inventorySortAsc;
   inventorySortOrderButton.textContent = inventorySortAsc ? "▲" : "▼";
+  saveCampaignProgress();
   renderInventory();
 });
 
@@ -4105,7 +4981,9 @@ document
     if (stageEntered || isBattleRunning()) return;
     currentCampaignTabMode = "campaign";
     document.getElementById("campaign-mode-tab-btn")?.classList.add("active");
-    document.getElementById("challenge-mode-tab-btn")?.classList.remove("active");
+    document
+      .getElementById("challenge-mode-tab-btn")
+      ?.classList.remove("active");
 
     // Jump to the page of the selected Campaign stage
     const selected = stages.find((s) => s.id === selectedStageId);
@@ -4122,10 +5000,14 @@ document
     if (stageEntered || isBattleRunning()) return;
     currentCampaignTabMode = "challenge";
     document.getElementById("challenge-mode-tab-btn")?.classList.add("active");
-    document.getElementById("campaign-mode-tab-btn")?.classList.remove("active");
+    document
+      .getElementById("campaign-mode-tab-btn")
+      ?.classList.remove("active");
 
     // Jump to the page of the selected Challenge stage
-    const selected = challengeStages.find((s) => s.id === selectedChallengeStageId);
+    const selected = challengeStages.find(
+      (s) => s.id === selectedChallengeStageId,
+    );
     if (selected) {
       currentStagePage = Math.floor(selected.index / stagesPerPage);
     }
@@ -4165,6 +5047,12 @@ document
   .getElementById("toggle-swap-layout-checkbox")
   ?.addEventListener("change", (e) => {
     setSwapDeploymentLayout(e.target.checked);
+  });
+
+document
+  .getElementById("toggle-frontline-cooldown-checkbox")
+  ?.addEventListener("change", (e) => {
+    setShowFrontlineCooldown(e.target.checked);
   });
 
 optionsMenuBtn?.addEventListener("click", openOptionsMenu);
@@ -4214,6 +5102,10 @@ document
 document
   .getElementById("toggle-show-tech-bonus-checkbox")
   ?.addEventListener("change", (e) => setShowTechBonus(e.target.checked));
+
+document
+  .getElementById("toggle-show-effective-damage-checkbox")
+  ?.addEventListener("change", (e) => setShowEffectiveDamage(e.target.checked));
 
 document.addEventListener("DOMContentLoaded", () => {
   const treeBtn = document.getElementById("tech-tree-tab-btn");
