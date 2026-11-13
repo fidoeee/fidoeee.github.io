@@ -13,6 +13,7 @@
     <script src="game.js" defer></script>
     <script src="battle.js" defer></script>
     <script src="devTools.js" defer></script>
+    <script src="buildAnimation.js" defer></script>
   </head>
 
   <body>
@@ -108,7 +109,7 @@
 
     <!-- Options Modal Overlay -->
     <div id="options-modal-overlay" class="unit-popup-overlay hidden">
-      <div class="unit-popup options-popup">
+      <div class="unit-popup options-popup wide">
         <div class="unit-popup-header">
           <h2>⚙️ Game Options</h2>
           <button
@@ -121,56 +122,80 @@
           </button>
         </div>
 
-        <div class="options-content">
-          <label class="option-row">
-            <input type="checkbox" id="toggle-clear-popup-checkbox" checked />
-            <span>Show Stage Cleared Summary Popup</span>
-          </label>
+        <div class="options-grid">
+          <!-- Group 1: Combat & Deployment -->
+          <div class="option-group">
+            <div class="option-group-title">Combat &amp; Deployment</div>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-backline-cooldown-checkbox" />
-            <span>Show Backline Cooldown</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-frontline-cooldown-checkbox" />
+              <span>Show Frontline Cooldown</span>
+            </label>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-frontline-cooldown-checkbox" />
-            <span>Show Frontline Cooldown</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-backline-cooldown-checkbox" />
+              <span>Show Backline Cooldown</span>
+            </label>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-swap-layout-checkbox" />
-            <span>Show Backline Above Main</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-swap-layout-checkbox" />
+              <span>Show Backline Above Main</span>
+            </label>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-simplified-log-checkbox" />
-            <span>Simplify Battle Log</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-simplified-log-checkbox" />
+              <span>Simplify Battle Log</span>
+            </label>
+          </div>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-hide-maxed-tech-checkbox" />
-            <span>Hide Maxed Tech Upgrades</span>
-          </label>
+          <!-- Group 2: Tower Details & UI -->
+          <div class="option-group">
+            <div class="option-group-title">Tower Details &amp; UI</div>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-unpin-topbar-checkbox" />
-            <span>Unpin Top Bar</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-show-more-stats-checkbox" />
+              <span>Show More Stats</span>
+            </label>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-show-more-stats-checkbox" />
-            <span>Show More Stats</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-show-tech-bonus-checkbox" />
+              <span>Show Tech Stat Breakdown</span>
+            </label>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-show-tech-bonus-checkbox" />
-            <span>Show Tech Stat Breakdown</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-show-effective-damage-checkbox" />
+              <span>Show Effective Damage &amp; Level Slider</span>
+            </label>
 
-          <label class="option-row">
-            <input type="checkbox" id="toggle-show-effective-damage-checkbox" />
-            <span>Show Effective Damage & Level Advantage Slider</span>
-          </label>
+            <label class="option-row">
+              <input type="checkbox" id="toggle-hide-maxed-tech-checkbox" />
+              <span>Hide Maxed Tech Upgrades</span>
+            </label>
+          </div>
+
+          <!-- Group 3: General & Animations -->
+          <div class="option-group full-span">
+            <div class="option-group-title">General &amp; Animations</div>
+
+            <div class="option-segmented-row">
+              <span>Tower Build Animation</span>
+              <div class="segmented-control" id="build-anim-segmented">
+                <button type="button" class="segmented-btn active" data-build-anim="full">Full</button>
+                <button type="button" class="segmented-btn" data-build-anim="short">Short</button>
+                <button type="button" class="segmented-btn" data-build-anim="off">Off</button>
+              </div>
+            </div>
+
+            <label class="option-row">
+              <input type="checkbox" id="toggle-clear-popup-checkbox" />
+              <span>Show Stage Cleared Summary Popup</span>
+            </label>
+
+            <label class="option-row">
+              <input type="checkbox" id="toggle-unpin-topbar-checkbox" />
+              <span>Unpin Top Bar</span>
+            </label>
+          </div>
         </div>
 
         <div class="unit-popup-actions">
