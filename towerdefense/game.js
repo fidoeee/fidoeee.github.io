@@ -100,6 +100,7 @@ let unpinTopBar = false;
 let showMoreStats = false;
 let showTechBonus = false;
 let showEffectiveDamage = false;
+let buildAnimationMode = "full"; // "full" | "short" | "off"
 
 // --- Inventory & UI Display Filters ---
 let inventoryFilter = "all"; // "all", "Main", "Rear"
@@ -111,6 +112,7 @@ let upgradeMenuSortMode = "level";
 let upgradeMenuSortOrder = "desc";
 let boostMenuSortMode = "level";
 let boostMenuSortOrder = "desc";
+let boostMenuCategoryFilter = "all"; // "all" | "Main" | "Rear"
 let energyMode = "hide";
 
 const QUICK_SAC_RARITIES = [
@@ -124,6 +126,7 @@ const QUICK_SAC_RARITIES = [
 
 const DEFAULT_QUICK_SAC_SETTINGS = {
   askConfirmation: true,
+  categoryFilter: "all",
   maxLevelEnabled: false,
   maxLevel: 1,
   maxUpgradesEnabled: false,
@@ -292,6 +295,7 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       showMoreStats,
       showTechBonus,
       showEffectiveDamage,
+      buildAnimationMode,
       autoStartWaveEnabled,
       autoRepeatEnabled: false,
       autoRepeatCount: 0,
@@ -340,6 +344,14 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     showMoreStats = saved.showMoreStats ?? false;
     showTechBonus = saved.showTechBonus ?? false;
     showEffectiveDamage = saved.showEffectiveDamage ?? false;
+    buildAnimationMode = ["full", "short", "off"].includes(
+      saved.buildAnimationMode,
+    )
+      ? saved.buildAnimationMode
+      : "full";
+
+    syncOptionCheckboxes();
+    setUnpinTopBar(unpinTopBar);
 
     syncOptionCheckboxes();
     setUnpinTopBar(unpinTopBar);
@@ -379,10 +391,12 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     quickSacSettings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SAC_SETTINGS));
     if (saved.quickSacSettings && typeof saved.quickSacSettings === "object") {
       if (typeof saved.quickSacSettings.askConfirmation === "boolean") {
-        quickSacSettings.askConfirmation = saved.quickSacSettings.askConfirmation;
+        quickSacSettings.askConfirmation =
+          saved.quickSacSettings.askConfirmation;
       }
       if (typeof saved.quickSacSettings.maxLevelEnabled === "boolean") {
-        quickSacSettings.maxLevelEnabled = saved.quickSacSettings.maxLevelEnabled;
+        quickSacSettings.maxLevelEnabled =
+          saved.quickSacSettings.maxLevelEnabled;
       }
       if (Number.isFinite(Number(saved.quickSacSettings.maxLevel))) {
         quickSacSettings.maxLevel = Math.max(
@@ -393,6 +407,11 @@ function loadCampaignProgress(slot = currentSaveSlot) {
       if (typeof saved.quickSacSettings.maxUpgradesEnabled === "boolean") {
         quickSacSettings.maxUpgradesEnabled =
           saved.quickSacSettings.maxUpgradesEnabled;
+      }
+      if (
+        ["all", "Main", "Rear"].includes(saved.quickSacSettings.categoryFilter)
+      ) {
+        quickSacSettings.categoryFilter = saved.quickSacSettings.categoryFilter;
       }
       if (Number.isFinite(Number(saved.quickSacSettings.maxUpgrades))) {
         quickSacSettings.maxUpgrades = Math.max(
@@ -741,6 +760,15 @@ function syncOptionCheckboxes() {
       checkbox.checked = Boolean(val);
     }
   }
+
+  document
+    .querySelectorAll("#build-anim-segmented .segmented-btn")
+    .forEach((btn) => {
+      btn.classList.toggle(
+        "active",
+        btn.dataset.buildAnim === buildAnimationMode,
+      );
+    });
 }
 
 function getStageEnergyRegenMultiplier(
@@ -1149,7 +1177,7 @@ function cancelWorkerIntermission() {
 function consumeUnitForXp(targetId, consumedId) {
   if (stageEntered || isBattleRunning()) {
     addLog("You cannot consume units while inside a world.");
-    return;
+    return null;
   }
 
   const targetIndex = inventory.findIndex((u) => u.id === targetId);
@@ -1157,11 +1185,15 @@ function consumeUnitForXp(targetId, consumedId) {
 
   if (targetIndex === -1 || consumedIndex === -1 || targetId === consumedId) {
     addLog("Invalid boost selection.");
-    return;
+    return null;
   }
 
   const target = inventory[targetIndex];
   const consumed = inventory[consumedIndex];
+
+  const startLevel = target.level;
+  const startXp = target.xp || 0;
+  const startReqXp = getRequiredXp(target);
 
   const earnedXp = getConsumeXpBonus(consumed, target);
   inventory.splice(consumedIndex, 1);
@@ -1191,6 +1223,15 @@ function consumeUnitForXp(targetId, consumedId) {
   updateUI();
   renderInventory();
   renderDeployment();
+
+  return {
+    startLevel,
+    startXp,
+    startReqXp,
+    endLevel: target.level,
+    endXp: target.xp,
+    endReqXp: getRequiredXp(target),
+  };
 }
 
 function getLevelMultiplier(unit) {
@@ -1669,6 +1710,7 @@ function buyRandomUnit(category = "Main", count = 1) {
   st -= totalStCost;
 
   const obtainedCounts = {};
+  const pulledItems = [];
 
   for (let i = 0; i < count; i++) {
     const unitType = getRandomUnitTypeByCategory(category);
@@ -1688,8 +1730,10 @@ function buyRandomUnit(category = "Main", count = 1) {
 
     inventory.push(unit);
 
-    const name = getUnitName(unit);
+    const data = getUnitData(unit);
+    const name = data.name ?? "Unknown Turret";
     obtainedCounts[name] = (obtainedCounts[name] || 0) + 1;
+    pulledItems.push({ unit, data, isNew: !alreadyOwns });
   }
 
   saveCampaignProgress();
@@ -1710,6 +1754,10 @@ function buyRandomUnit(category = "Main", count = 1) {
 
   updateUI();
   renderInventory();
+
+  if (typeof playBuildAnimation === "function") {
+    playBuildAnimation(pulledItems, category);
+  }
 }
 
 function createUnit(type) {
@@ -2686,7 +2734,11 @@ function closeQuickSacConfirmPopup() {
 function closeUnitPopup() {
   closeQuickSacConfirmPopup();
   closeQuickSacSettingsPopup();
-  document.getElementById("unit-popup-overlay")?.remove();
+  const overlay = document.getElementById("unit-popup-overlay");
+  if (overlay?._xpAnimRafId) {
+    cancelAnimationFrame(overlay._xpAnimRafId);
+  }
+  overlay?.remove();
 
   if (unitPopupEscapeHandler) {
     document.removeEventListener("keydown", unitPopupEscapeHandler);
@@ -2694,7 +2746,7 @@ function closeUnitPopup() {
   }
 }
 
-function openUnitPopup(unitId) {
+function openUnitPopup(unitId, xpAnimData = null) {
   closeUnitPopup();
 
   const unit = inventory.find((item) => item.id === unitId);
@@ -3002,8 +3054,18 @@ function openUnitPopup(unitId) {
   const xpHeader = document.createElement("div");
   xpHeader.className = "unit-popup-xp-header";
 
+  const initialLevel = xpAnimData ? xpAnimData.startLevel : unit.level;
+  const initialXp = xpAnimData ? xpAnimData.startXp : unit.xp;
+  const initialReqXp = xpAnimData ? xpAnimData.startReqXp : reqXp;
+
+  if (xpAnimData) {
+    subtitle.textContent = `Level ${initialLevel} · ${data.rarity} · ${unit.upgradeCount}`;
+  }
+
   const xpTitle = document.createElement("span");
-  xpTitle.textContent = `Level: ${unit.level}`;
+  xpTitle.style.display = "inline-block";
+  xpTitle.style.transition = "transform 0.12s ease-out";
+  xpTitle.textContent = `Level: ${initialLevel}`;
 
   const boostBtn = document.createElement("button");
   boostBtn.type = "button";
@@ -3013,14 +3075,19 @@ function openUnitPopup(unitId) {
   boostBtn.addEventListener("click", () => openBoostMenu(unit.id));
 
   const xpValue = document.createElement("strong");
-  const xpPercent = Math.min(100, Math.floor((unit.xp / reqXp) * 100));
-  const formattedXp =
+  const initialPercent = Math.min(
+    100,
+    Math.max(0, (initialXp / Math.max(1, initialReqXp)) * 100),
+  );
+  const fmtInitialXp =
     typeof formatGameNumber === "function"
-      ? formatGameNumber(unit.xp)
-      : unit.xp;
-  const formattedReqXp =
-    typeof formatGameNumber === "function" ? formatGameNumber(reqXp) : reqXp;
-  xpValue.textContent = `${formattedXp} / ${formattedReqXp} XP`;
+      ? formatGameNumber(initialXp)
+      : initialXp;
+  const fmtInitialReq =
+    typeof formatGameNumber === "function"
+      ? formatGameNumber(initialReqXp)
+      : initialReqXp;
+  xpValue.textContent = `${fmtInitialXp} / ${fmtInitialReq} XP`;
 
   const headerRight = document.createElement("div");
   headerRight.className = "xp-header-right";
@@ -3033,11 +3100,122 @@ function openUnitPopup(unitId) {
 
   const xpFill = document.createElement("div");
   xpFill.className = "xp-fill";
-  xpFill.style.width = `${xpPercent}%`;
+  xpFill.style.width = `${initialPercent}%`;
 
   xpTrack.appendChild(xpFill);
   xpContainer.append(xpHeader, xpTrack);
   popup.appendChild(xpContainer);
+
+  if (xpAnimData) {
+    const { startLevel, startXp, startReqXp, endLevel, endXp, endReqXp } =
+      xpAnimData;
+    const levelsGained = Math.max(0, endLevel - startLevel);
+
+    // Sublinear duration scaling: ~0.67s for 1 lvl, ~1.14s for 10 lvls, ~1.6s cap for 100+ lvls
+    const totalDurationMs =
+      levelsGained === 0
+        ? 320
+        : Math.min(1600, 480 + 190 * Math.log2(levelsGained + 1));
+
+    const startFrac = Math.min(
+      1,
+      Math.max(0, startXp / Math.max(1, startReqXp)),
+    );
+    const endFrac = Math.min(1, Math.max(0, endXp / Math.max(1, endReqXp)));
+    const firstSeg = Math.max(0.05, 1 - startFrac);
+    const totalDistance =
+      levelsGained === 0
+        ? Math.max(0.001, endFrac - startFrac)
+        : firstSeg + Math.max(0, levelsGained - 1) + endFrac;
+
+    const animStartTime = performance.now();
+    let lastShownLevel = startLevel;
+    xpFill.style.transition = "none";
+
+    const stepXpBar = (now) => {
+      if (!document.body.contains(overlay)) return;
+
+      const rawT = Math.min(1, (now - animStartTime) / totalDurationMs);
+      const eased =
+        levelsGained === 0
+          ? 1 - Math.pow(1 - rawT, 2.5)
+          : 1 - Math.pow(1 - rawT, 1.55);
+
+      let displayLevel = endLevel;
+      let barFrac = endFrac;
+
+      if (levelsGained === 0) {
+        barFrac = startFrac + (endFrac - startFrac) * eased;
+        displayLevel = startLevel;
+      } else {
+        const distCovered = totalDistance * eased;
+        if (distCovered < firstSeg) {
+          displayLevel = startLevel;
+          const segProgress = distCovered / firstSeg;
+          barFrac = startFrac + (1 - startFrac) * segProgress;
+        } else {
+          const remaining = distCovered - firstSeg;
+          const fullBarsCompleted = Math.floor(remaining);
+          if (fullBarsCompleted < levelsGained - 1) {
+            displayLevel = startLevel + 1 + fullBarsCompleted;
+            barFrac = remaining - fullBarsCompleted;
+          } else {
+            displayLevel = endLevel;
+            barFrac = Math.min(
+              endFrac,
+              Math.max(0, remaining - (levelsGained - 1)),
+            );
+          }
+        }
+      }
+
+      if (displayLevel !== lastShownLevel) {
+        lastShownLevel = displayLevel;
+        xpTitle.textContent = `Level: ${displayLevel}`;
+        subtitle.textContent = `Level ${displayLevel} · ${data.rarity} · ${unit.upgradeCount}`;
+        xpTitle.style.transform = "scale(1.1)";
+        xpFill.style.filter = "brightness(1.45)";
+        setTimeout(() => {
+          if (document.body.contains(xpTitle)) {
+            xpTitle.style.transform = "scale(1)";
+            xpFill.style.filter = "";
+          }
+        }, 110);
+      }
+
+      const curReq =
+        displayLevel === endLevel
+          ? endReqXp
+          : getRequiredXp(displayLevel, unit.category);
+      const curXp =
+        rawT >= 1 && displayLevel === endLevel
+          ? endXp
+          : Math.round(barFrac * curReq);
+
+      const fmtCur =
+        typeof formatGameNumber === "function"
+          ? formatGameNumber(curXp)
+          : curXp;
+      const fmtReq =
+        typeof formatGameNumber === "function"
+          ? formatGameNumber(curReq)
+          : curReq;
+
+      xpValue.textContent = `${fmtCur} / ${fmtReq} XP`;
+      xpFill.style.width = `${Math.min(100, Math.max(0, barFrac * 100)).toFixed(2)}%`;
+
+      if (rawT < 1) {
+        overlay._xpAnimRafId = requestAnimationFrame(stepXpBar);
+      } else {
+        xpFill.style.transition = "";
+        xpFill.style.filter = "";
+        xpTitle.style.transform = "";
+        overlay._xpAnimRafId = null;
+      }
+    };
+
+    overlay._xpAnimRafId = requestAnimationFrame(stepXpBar);
+  }
 
   // --- 4. Actions ---
   const actions = document.createElement("div");
@@ -3366,7 +3544,10 @@ function getQuickSacCandidates(targetId) {
   if (!target) return [];
 
   const enforceMaxLevel = Boolean(quickSacSettings.maxLevelEnabled);
-  const maxLevelCap = Math.max(1, Math.floor(Number(quickSacSettings.maxLevel) || 1));
+  const maxLevelCap = Math.max(
+    1,
+    Math.floor(Number(quickSacSettings.maxLevel) || 1),
+  );
 
   const enforceMaxUpgrades = Boolean(quickSacSettings.maxUpgradesEnabled);
   const maxUpgradesCap = Math.max(
@@ -3374,10 +3555,18 @@ function getQuickSacCandidates(targetId) {
     Math.floor(Number(quickSacSettings.maxUpgrades) || 0),
   );
 
+  const categoryFilter = quickSacSettings.categoryFilter || "all";
+
   // Group unlocked inventory towers (excluding the target tower) by tower type
   const byType = {};
   for (const unit of inventory) {
     if (unit.id === target.id || unit.isLocked) continue;
+
+    if (categoryFilter !== "all") {
+      const cat = unit.category || getUnitData(unit).category || "Main";
+      if (cat !== categoryFilter) continue;
+    }
+
     const typeKey = unit.type || "unknown";
     if (!byType[typeKey]) byType[typeKey] = [];
     byType[typeKey].push(unit);
@@ -3412,7 +3601,8 @@ function getQuickSacCandidates(targetId) {
 
     for (const unit of excessUnits) {
       if (enforceMaxLevel && (unit.level || 1) > maxLevelCap) continue;
-      if (enforceMaxUpgrades && (unit.upgradeCount || 0) > maxUpgradesCap) continue;
+      if (enforceMaxUpgrades && (unit.upgradeCount || 0) > maxUpgradesCap)
+        continue;
       toSacrifice.push(unit);
     }
   }
@@ -3437,6 +3627,8 @@ function executeQuickSacrifice(targetId) {
 
   const removeIds = new Set(toSacrifice.map((u) => u.id));
   const startLevel = target.level;
+  const startXp = target.xp || 0;
+  const startReqXp = getRequiredXp(target);
   let totalEarnedXp = 0;
 
   for (const unit of toSacrifice) {
@@ -3477,11 +3669,20 @@ function executeQuickSacrifice(targetId) {
     );
   }
 
+  const xpAnimData = {
+    startLevel,
+    startXp,
+    startReqXp,
+    endLevel: target.level,
+    endXp: target.xp,
+    endReqXp: getRequiredXp(target),
+  };
+
   saveCampaignProgress();
   updateUI();
   renderInventory();
   renderDeployment();
-  openUnitPopup(target.id);
+  openUnitPopup(target.id, xpAnimData);
   openBoostMenu(target.id);
 }
 
@@ -3649,7 +3850,42 @@ function openQuickSacSettingsPopup(targetId) {
     return row;
   };
 
+  const categoryRow = document.createElement("div");
+  categoryRow.className = "quick-sac-row";
+  categoryRow.title = "Choose which tower category Quick Sac can consume";
+
+  const categoryLabel = document.createElement("span");
+  categoryLabel.className = "quick-sac-limit-label";
+  categoryLabel.textContent = "Category";
+
+  const categorySelect = document.createElement("select");
+  categorySelect.className = "upgrade-sort-select";
+  categorySelect.style.width = "auto";
+  categorySelect.style.minWidth = "96px";
+
+  for (const opt of [
+    { value: "all", label: "All" },
+    { value: "Main", label: "Main" },
+    { value: "Rear", label: "Rear" },
+  ]) {
+    const option = document.createElement("option");
+    option.value = opt.value;
+    option.textContent = opt.label;
+    if ((quickSacSettings.categoryFilter || "all") === opt.value) {
+      option.selected = true;
+    }
+    categorySelect.appendChild(option);
+  }
+
+  categorySelect.addEventListener("change", (e) => {
+    quickSacSettings.categoryFilter = e.target.value;
+    autosaveAndRefresh();
+  });
+
+  categoryRow.append(categoryLabel, categorySelect);
+
   limitsSection.append(
+    categoryRow,
     createLimitRow({
       labelText: "Max Level",
       tooltip: "Only sacrifice towers at or below this level",
@@ -3778,12 +4014,15 @@ function openQuickSacConfirmPopup(targetId, candidates) {
     const rA = localRarityRank[unitTypes[a.type]?.rarity || "Common"] || 0;
     const rB = localRarityRank[unitTypes[b.type]?.rarity || "Common"] || 0;
     if (rA !== rB) return rB - rA;
-    if ((a.level || 1) !== (b.level || 1)) return (b.level || 1) - (a.level || 1);
+    if ((a.level || 1) !== (b.level || 1))
+      return (b.level || 1) - (a.level || 1);
     return (b.upgradeCount || 0) - (a.upgradeCount || 0);
   });
 
   const formattedXp =
-    typeof formatGameNumber === "function" ? formatGameNumber(totalXp) : totalXp;
+    typeof formatGameNumber === "function"
+      ? formatGameNumber(totalXp)
+      : totalXp;
 
   const summary = document.createElement("div");
   summary.className = "quick-sac-confirm-summary";
@@ -3959,16 +4198,41 @@ function openBoostMenu(targetId) {
   quickSacBar.append(quickSacBtn, quickSacSettingsBtn);
   panel.appendChild(quickSacBar);
 
-  // --- Sort & Direction Controls ---
+  // --- Filter, Sort & Direction Controls ---
   const sortContainer = document.createElement("div");
   sortContainer.className = "upgrade-sort-container";
   sortContainer.style.display = "flex";
   sortContainer.style.gap = "6px";
   sortContainer.style.margin = "8px 0 12px 0";
 
+  const filterLabels = {
+    all: "Filter: All",
+    Main: "Filter: Main",
+    Rear: "Filter: Rear",
+  };
+
+  const filterBtn = document.createElement("button");
+  filterBtn.type = "button";
+  filterBtn.className = "upgrade-order-btn";
+  filterBtn.style.width = "auto";
+  filterBtn.style.flexShrink = "0";
+  filterBtn.style.whiteSpace = "nowrap";
+  filterBtn.style.padding = "0 10px";
+  filterBtn.textContent =
+    filterLabels[boostMenuCategoryFilter] || "Filter: All";
+  filterBtn.title = "Filter by category (All / Main / Rear)";
+  filterBtn.addEventListener("click", () => {
+    if (boostMenuCategoryFilter === "all") boostMenuCategoryFilter = "Main";
+    else if (boostMenuCategoryFilter === "Main")
+      boostMenuCategoryFilter = "Rear";
+    else boostMenuCategoryFilter = "all";
+    openBoostMenu(target.id);
+  });
+
   const sortSelect = document.createElement("select");
   sortSelect.className = "upgrade-sort-select";
   sortSelect.style.flex = "1";
+  sortSelect.style.minWidth = "0";
 
   for (const opt of [
     { value: "level", label: "Sort: Level" },
@@ -3998,17 +4262,25 @@ function openBoostMenu(targetId) {
     openBoostMenu(target.id);
   });
 
-  sortContainer.append(sortSelect, orderBtn);
+  sortContainer.append(filterBtn, sortSelect, orderBtn);
   panel.appendChild(sortContainer);
 
-  let candidates = inventory.filter(
-    (unit) => unit.id !== target.id && !unit.isLocked,
-  );
+  let candidates = inventory.filter((unit) => {
+    if (unit.id === target.id || unit.isLocked) return false;
+    if (boostMenuCategoryFilter !== "all") {
+      const cat = unit.category || getUnitData(unit).category || "Main";
+      if (cat !== boostMenuCategoryFilter) return false;
+    }
+    return true;
+  });
 
   if (candidates.length === 0) {
     const emptyMessage = document.createElement("p");
     emptyMessage.className = "empty-message";
-    emptyMessage.textContent = "No unlocked towers.";
+    emptyMessage.textContent =
+      boostMenuCategoryFilter === "all"
+        ? "No unlocked towers."
+        : `No unlocked ${boostMenuCategoryFilter} towers.`;
     panel.appendChild(emptyMessage);
     layout.appendChild(panel);
     return;
@@ -4159,12 +4431,13 @@ function openBoostMenu(targetId) {
     button.append(name, details);
 
     button.addEventListener("click", () => {
+      let animData = null;
       if (typeof consumeUnitForXp === "function") {
-        consumeUnitForXp(target.id, candidate.id);
+        animData = consumeUnitForXp(target.id, candidate.id);
       } else if (typeof boostUnitXp === "function") {
         boostUnitXp(target.id, candidate.id);
       }
-      openUnitPopup(target.id);
+      openUnitPopup(target.id, animData);
       openBoostMenu(target.id);
     });
 
@@ -5279,21 +5552,16 @@ function setShowTechBonus(enabled) {
   saveCampaignProgress();
 }
 
+function setBuildAnimationMode(mode) {
+  if (!["full", "short", "off"].includes(mode)) return;
+  buildAnimationMode = mode;
+  syncOptionCheckboxes();
+  saveCampaignProgress();
+}
+
 function openOptionsMenu() {
   if (!optionsModalOverlay) return;
-
-  const clearCb = document.getElementById("toggle-clear-popup-checkbox");
-  if (clearCb) clearCb.checked = showClearPopup;
-
-  const cdCb = document.getElementById("toggle-backline-cooldown-checkbox");
-  if (cdCb) cdCb.checked = showBacklineCooldown;
-
-  const swapCb = document.getElementById("toggle-swap-layout-checkbox");
-  if (swapCb) swapCb.checked = swapDeploymentLayout;
-
-  const logCb = document.getElementById("toggle-simplified-log-checkbox");
-  if (logCb) logCb.checked = simplifyBattleLog;
-
+  syncOptionCheckboxes();
   optionsModalOverlay.classList.remove("hidden");
   optionsModalOverlay.style.display = "flex";
 }
@@ -5617,7 +5885,9 @@ function updateUI() {
 buyUnitButton?.addEventListener("click", () => buyRandomUnit("Main"));
 buyUnit10xButton?.addEventListener("click", () => buyRandomUnit("Main", 10));
 buyRearUnitButton?.addEventListener("click", () => buyRandomUnit("Rear"));
-buyRearUnit10xButton?.addEventListener("click", () => buyRandomUnit("Rear", 10));
+buyRearUnit10xButton?.addEventListener("click", () =>
+  buyRandomUnit("Rear", 10),
+);
 startWaveButton?.addEventListener("click", startWave);
 
 resetStorageButton?.addEventListener("click", () => {
@@ -5783,6 +6053,13 @@ document
   .getElementById("toggle-frontline-cooldown-checkbox")
   ?.addEventListener("change", (e) => {
     setShowFrontlineCooldown(e.target.checked);
+  });
+document
+  .querySelectorAll("#build-anim-segmented .segmented-btn")
+  .forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setBuildAnimationMode(btn.dataset.buildAnim);
+    });
   });
 
 optionsMenuBtn?.addEventListener("click", openOptionsMenu);
