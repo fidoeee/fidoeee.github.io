@@ -12,6 +12,7 @@
     <script src="techTree.js" defer></script>
     <script src="game.js" defer></script>
     <script src="battle.js" defer></script>
+    <script src="devTools.js" defer></script>
   </head>
 
   <body>
@@ -127,18 +128,12 @@
           </label>
 
           <label class="option-row">
-            <input
-              type="checkbox"
-              id="toggle-backline-cooldown-checkbox"
-            />
+            <input type="checkbox" id="toggle-backline-cooldown-checkbox" />
             <span>Show Backline Cooldown</span>
           </label>
 
           <label class="option-row">
-            <input
-              type="checkbox"
-              id="toggle-frontline-cooldown-checkbox"
-            />
+            <input type="checkbox" id="toggle-frontline-cooldown-checkbox" />
             <span>Show Frontline Cooldown</span>
           </label>
 
@@ -163,29 +158,19 @@
           </label>
 
           <label class="option-row">
-            <input
-              type="checkbox"
-              id="toggle-show-more-stats-checkbox"
-            />
+            <input type="checkbox" id="toggle-show-more-stats-checkbox" />
             <span>Show More Stats</span>
           </label>
 
           <label class="option-row">
-            <input
-              type="checkbox"
-              id="toggle-show-tech-bonus-checkbox"
-            />
+            <input type="checkbox" id="toggle-show-tech-bonus-checkbox" />
             <span>Show Tech Stat Breakdown</span>
           </label>
 
           <label class="option-row">
-            <input
-              type="checkbox"
-              id="toggle-show-effective-damage-checkbox"
-            />
+            <input type="checkbox" id="toggle-show-effective-damage-checkbox" />
             <span>Show Effective Damage & Level Advantage Slider</span>
           </label>
-          
         </div>
 
         <div class="unit-popup-actions">
@@ -263,6 +248,13 @@
                   Build Main Tower (50 Gold + 5 ST)
                 </button>
                 <button
+                  id="buy-unit-10x"
+                  type="button"
+                  title="Build 10 Main Towers (500 Gold + 50 ST)"
+                >
+                  10x
+                </button>
+                <button
                   id="main-pool-info-btn"
                   class="pool-info-btn"
                   type="button"
@@ -275,6 +267,13 @@
               <div class="shop-build-group">
                 <button id="buy-rear-unit" type="button">
                   Build Rear Tower (100 Gold + 10 ST)
+                </button>
+                <button
+                  id="buy-rear-unit-10x"
+                  type="button"
+                  title="Build 10 Rear Towers (1,000 Gold + 100 ST)"
+                >
+                  10x
                 </button>
                 <button
                   id="rear-pool-info-btn"
