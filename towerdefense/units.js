@@ -517,7 +517,7 @@ const unitTypes = {
     category: "Rear",
     rarity: "Rare",
     damage: 5000,
-    fireRate: 0.5,
+    fireRate: 0.4,
     range: 20,
     armorPen: 90,
     sellPrice: 80,

@@ -234,9 +234,20 @@ button:disabled {
 
 #buy-unit,
 #buy-rear-unit,
+#buy-unit-10x,
+#buy-rear-unit-10x,
 #start-wave,
 #skip-battle {
   margin: 4px 4px 4px 0;
+}
+
+#buy-unit-10x,
+#buy-rear-unit-10x {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 9px 7px;
+  font: inherit;
+  white-space: nowrap;
 }
 
 .reset-button {
@@ -275,13 +286,17 @@ button:disabled {
 }
 
 .pool-info-btn {
-  padding: 9px 10px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
   background: #303c4e;
   border: 1px solid #53627a;
-  border-radius: 6px;
+  border-radius: 5px;
   color: #f8fafc;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   line-height: 1;
 }
 
@@ -942,17 +957,17 @@ body.no-scroll {
 
 /* Mythic Rarity Outlines and Text */
 .unit-card.mythic {
-  border-color: #00f0ff;
+  border-color: #ff0000;
   box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
 }
 
 .unit-popup.mythic {
-  border: 2px solid #00f0ff;
+  border: 2px solid #ff0000;
   box-shadow: 0 0 28px rgba(0, 240, 255, 0.45);
 }
 
 .rarity-title.mythic {
-  color: #00f0ff;
+  color: #ff0000;
 }
 
 .unit-card strong {
@@ -1039,6 +1054,86 @@ body.no-scroll {
 
 .energy-white {
   color: #ffffff !important;
+}
+
+/* Energy Info Icon */
+.energy-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 4px; /* Changed from 50% to make it a rounded square */
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #60a5fa;
+  font-size: 0.7rem;
+  font-weight: bold;
+  font-style: italic;
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle; /* Standard table-cell alignment */
+  transform: translateY(-2px); /* Fine-tune micro-alignment with text height */
+  user-select: none;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.energy-info-icon:hover,
+.energy-info-icon.locked {
+  background: #2563eb;
+  border-color: #60a5fa;
+  color: #ffffff;
+}
+
+/* 2. Rounded Corner Square Tooltip Container */
+.energy-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  width: 270px; /* Wide enough so text doesn't stick out */
+  box-sizing: border-box;
+  background-color: #1e293b;
+  color: #f1f5f9;
+  text-align: left;
+  border: 1px solid #475569;
+  border-radius: 12px; /* Soft rounded square corners */
+  padding: 12px 14px; /* Generous padding for clean spacing */
+  position: absolute;
+  z-index: 100;
+  bottom: 140%; /* Positioned cleanly above the icon */
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+  font-size: 0.75rem;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1.45;
+  pointer-events: none;
+  white-space: normal;
+  transition: opacity 0.4s ease-in-out, visibility 0.4s ease-in-out;
+}
+
+/* Arrow Pointer at Bottom */
+.energy-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: #475569 transparent transparent transparent;
+}
+
+/* Hover & Locked Visibility States */
+.energy-info-icon:hover .energy-tooltip,
+.energy-info-icon.locked .energy-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.energy-info-icon.locked .energy-tooltip {
+  pointer-events: auto;
 }
 
 /* Fatigued Banner Badge for Unit Cards */
@@ -2077,6 +2172,328 @@ body.no-scroll {
   color: #ffffff;
 }
 
+/* Quick Sac Bar & Settings Modal */
+.quick-sac-btn {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  background: #1b4d2e;
+  border: 1px solid #287243;
+  color: #34d399;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.quick-sac-settings-btn {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 6px;
+}
+
+.quick-sac-modal {
+  width: 100%;
+  min-width: 0;
+  max-width: 310px;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid #475569;
+  background: #1e2430;
+}
+
+.quick-sac-col-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 0 6px 6px;
+  border-bottom: 1px solid #2d3748;
+  margin-bottom: 8px;
+}
+
+.quick-sac-list,
+.quick-sac-limits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-sac-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  background: #151922;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+}
+
+.quick-sac-rarity-label,
+.quick-sac-limit-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.quick-sac-limit-label {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.quick-sac-rarity-label.common { color: #9ca3af; }
+.quick-sac-rarity-label.uncommon { color: #34d399; }
+.quick-sac-rarity-label.rare { color: #60a5fa; }
+.quick-sac-rarity-label.epic { color: #a855f7; }
+.quick-sac-rarity-label.legendary { color: #f59e0b; }
+.quick-sac-rarity-label.mythic { color: #ff4d4d; }
+
+#quick-sac-settings-overlay input[type="checkbox"] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+  cursor: pointer;
+  accent-color: #34d399;
+}
+
+#quick-sac-settings-overlay input[type="number"] {
+  width: 56px;
+  min-width: 56px;
+  max-width: 56px;
+  flex: 0 0 56px;
+  height: 28px;
+  padding: 2px 6px;
+  margin: 0;
+  box-sizing: border-box;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #f8fafc;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+  color-scheme: dark;
+}
+
+#quick-sac-settings-overlay input[type="number"]:hover {
+  border-color: #475569;
+}
+
+#quick-sac-settings-overlay input[type="number"]:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.quick-sac-setting-divider {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #2d3748;
+}
+
+.quick-sac-confirm-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 8px;
+  background: #151922;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Large Quick Sac Confirmation Popup */
+.quick-sac-confirm-modal {
+  width: 100%;
+  max-width: 680px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid #475569;
+  background: #1e2430;
+}
+
+.quick-sac-confirm-summary {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  background: #151922;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.quick-sac-xp-gain {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.quick-sac-confirm-grid {
+  flex: 1;
+  min-height: 160px;
+  max-height: 52vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 8px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+
+.quick-sac-confirm-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #151922;
+  border: 1px solid #2d3748;
+  border-left-width: 3px;
+  border-radius: 6px;
+}
+
+.quick-sac-confirm-card.rarity-border-common { border-left-color: #9ca3af; }
+.quick-sac-confirm-card.rarity-border-uncommon { border-left-color: #34d399; }
+.quick-sac-confirm-card.rarity-border-rare { border-left-color: #60a5fa; }
+.quick-sac-confirm-card.rarity-border-epic { border-left-color: #a855f7; }
+.quick-sac-confirm-card.rarity-border-legendary { border-left-color: #f59e0b; }
+.quick-sac-confirm-card.rarity-border-mythic { border-left-color: #ff4d4d; }
+
+.quick-sac-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.quick-sac-card-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-sac-card-name.common { color: #9ca3af; }
+.quick-sac-card-name.uncommon { color: #34d399; }
+.quick-sac-card-name.rare { color: #60a5fa; }
+.quick-sac-card-name.epic { color: #a855f7; }
+.quick-sac-card-name.legendary { color: #f59e0b; }
+.quick-sac-card-name.mythic { color: #ff4d4d; }
+
+.quick-sac-card-level {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.quick-sac-card-rarity {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+/* Aligned Confirmation Footer & Buttons */
+.quick-sac-confirm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2d3748;
+  flex-wrap: wrap;
+}
+
+.quick-sac-dont-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.quick-sac-dont-show input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #34d399;
+}
+
+.quick-sac-confirm-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
+  gap: 10px;
+  margin-left: auto;
+}
+
+.quick-sac-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 18px;
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.quick-sac-action-btn.cancel {
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+}
+
+.quick-sac-action-btn.cancel:hover {
+  background: #334155;
+  color: #ffffff;
+}
+
+.quick-sac-action-btn.confirm {
+  background: #1b4d2e;
+  border: 1px solid #287243;
+  color: #34d399;
+}
+
+.quick-sac-action-btn.confirm:hover {
+  background: #23633b;
+  color: #ffffff;
+}
+
 .unit-popup-actions {
   display: flex;
   flex-direction: column;
@@ -2757,4 +3174,9 @@ body.no-scroll {
     height: 20px;
     font-size: 0.8rem;
   }
+}
+
+canvas, 
+body {
+  touch-action: manipulation;
 }

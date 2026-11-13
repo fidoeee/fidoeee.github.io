@@ -10,7 +10,7 @@ const challengeBonusNodes = {
   cb_base_damage: {
     id: "cb_base_damage",
     name: "Flat Base Damage",
-    costPerLevel: (lvl) => 1 + Math.floor(lvl / 5),
+    costPerLevel: (lvl) => 1 + Math.floor(lvl / 2),
     getBonus: (lvl) => lvl * 0.5,
     getDescription: (lvl) =>
       `All towers +${(lvl * 0.5).toFixed(1)} base damage.`,
@@ -18,7 +18,7 @@ const challengeBonusNodes = {
   cb_reload_speed: {
     id: "cb_reload_speed",
     name: "Flat Fire Rate",
-    costPerLevel: (lvl) => 1 + Math.floor(lvl / 5),
+    costPerLevel: (lvl) => 1 + Math.floor(lvl / 2),
     getBonus: (lvl) => lvl * 0.1,
     getDescription: (lvl) => `All towers +${(lvl * 0.1).toFixed(2)} fire rate.`,
   },
@@ -209,7 +209,7 @@ const techNodes = {
     id: "eco_base_build",
     name: "Base Defense Protocol",
     category: "Build",
-    costBase: 200,
+    costBase: 100,
     costMultiplier: 1.0,
     maxLevel: 1,
     requiresStage: "1-4",
@@ -336,12 +336,12 @@ const techNodes = {
     name: "Combat Experience",
     category: "Eco",
     costBase: 400,
-    costMultiplier: 3,
-    maxLevel: 5,
+    costMultiplier: 1.6,
+    maxLevel: 10,
     requiresNode: null,
     getBonus: (lvl) => lvl * 0.5,
     getDescription: (lvl) => {
-      if (lvl >= 5) return "+250% Wave XP (Maxed)";
+      if (lvl >= 10) return "+500% Wave XP (Maxed)";
       const nextLvl = lvl + 1;
       const total = nextLvl * 50;
       return `+${total}% Wave XP (+50%)`;

@@ -113,6 +113,31 @@ let boostMenuSortMode = "level";
 let boostMenuSortOrder = "desc";
 let energyMode = "hide";
 
+const QUICK_SAC_RARITIES = [
+  "Common",
+  "Uncommon",
+  "Rare",
+  "Epic",
+  "Legendary",
+  "Mythic",
+];
+
+const DEFAULT_QUICK_SAC_SETTINGS = {
+  askConfirmation: true,
+  maxLevelEnabled: false,
+  maxLevel: 1,
+  maxUpgradesEnabled: false,
+  maxUpgrades: 0,
+  Common: { enabled: true, keep: 0 },
+  Uncommon: { enabled: true, keep: 0 },
+  Rare: { enabled: false, keep: 1 },
+  Epic: { enabled: false, keep: 1 },
+  Legendary: { enabled: false, keep: 1 },
+  Mythic: { enabled: false, keep: 1 },
+};
+
+let quickSacSettings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SAC_SETTINGS));
+
 let currentStagePage = 0;
 let damageDecimal = 1;
 const stagesPerPage = 10;
@@ -146,7 +171,9 @@ const enemyStatus = document.getElementById("enemy-status");
 // Main Action Buttons
 const startWaveButton = document.getElementById("start-wave");
 const buyUnitButton = document.getElementById("buy-unit");
+const buyUnit10xButton = document.getElementById("buy-unit-10x");
 const buyRearUnitButton = document.getElementById("buy-rear-unit");
+const buyRearUnit10xButton = document.getElementById("buy-rear-unit-10x");
 
 // Stage Selection Elements
 const stageGrid = document.getElementById("stage-grid");
@@ -275,6 +302,7 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       inventorySortAsc,
       currentInventoryTab,
       energyMode,
+      quickSacSettings,
     };
 
     localStorage.setItem(getSaveKey(slot), JSON.stringify(saveData));
@@ -347,6 +375,43 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     setUnpinTopBar(unpinTopBar);
 
     if (saved.energyMode) energyMode = saved.energyMode;
+
+    quickSacSettings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SAC_SETTINGS));
+    if (saved.quickSacSettings && typeof saved.quickSacSettings === "object") {
+      if (typeof saved.quickSacSettings.askConfirmation === "boolean") {
+        quickSacSettings.askConfirmation = saved.quickSacSettings.askConfirmation;
+      }
+      if (typeof saved.quickSacSettings.maxLevelEnabled === "boolean") {
+        quickSacSettings.maxLevelEnabled = saved.quickSacSettings.maxLevelEnabled;
+      }
+      if (Number.isFinite(Number(saved.quickSacSettings.maxLevel))) {
+        quickSacSettings.maxLevel = Math.max(
+          1,
+          Math.floor(Number(saved.quickSacSettings.maxLevel)),
+        );
+      }
+      if (typeof saved.quickSacSettings.maxUpgradesEnabled === "boolean") {
+        quickSacSettings.maxUpgradesEnabled =
+          saved.quickSacSettings.maxUpgradesEnabled;
+      }
+      if (Number.isFinite(Number(saved.quickSacSettings.maxUpgrades))) {
+        quickSacSettings.maxUpgrades = Math.max(
+          0,
+          Math.floor(Number(saved.quickSacSettings.maxUpgrades)),
+        );
+      }
+      for (const rarity of QUICK_SAC_RARITIES) {
+        if (saved.quickSacSettings[rarity]) {
+          quickSacSettings[rarity] = {
+            enabled: Boolean(saved.quickSacSettings[rarity].enabled),
+            keep: Math.max(
+              0,
+              Math.floor(Number(saved.quickSacSettings[rarity].keep) || 0),
+            ),
+          };
+        }
+      }
+    }
 
     // Restore Progression Data
     if (Number.isInteger(saved.unlockedStageIndex)) {
@@ -594,6 +659,7 @@ function handleLoadFromSlot(slot) {
       deployedUnits.fill(null);
       deployedBaseUnits.fill(null);
       deploymentPresets = [null, null, null];
+      quickSacSettings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SAC_SETTINGS));
 
       saveCampaignProgress(slot);
       updateUI();
@@ -692,7 +758,13 @@ function getStageEnergyRegenMultiplier(
 
 function processInventoryStaminaRegenOnStageClear(stageId) {
   const regenMultiplier = getStageEnergyRegenMultiplier(stageId);
-  const regenAmount = Number((energyRegen * regenMultiplier).toFixed(2));
+  const totalDeployed = getDeployedCount() + getDeployedBaseCount();
+  const baseCapacity = 5;
+  const deploymentMultiplier = Math.min(1.0, totalDeployed / baseCapacity);
+
+  const regenAmount = Number(
+    (energyRegen * regenMultiplier * deploymentMultiplier).toFixed(2),
+  );
 
   for (const unit of inventory) {
     if (unit.energy < (unit.maxEnergy || 100)) {
@@ -1123,11 +1195,11 @@ function consumeUnitForXp(targetId, consumedId) {
 
 function getLevelMultiplier(unit) {
   const lvl = unit.level;
-  // Linear scaling up to Lvl 50, then smooth compounding growth
-  if (lvl <= 50) {
-    return 1 + 0.1 * (lvl - 1); // Lvl 50 = 5.9x
+  // Linear scaling up to Lvl 25, then smooth compounding growth
+  if (lvl <= 25) {
+    return 1 + 0.1 * (lvl - 1); // Lvl 25 = 3.4x
   }
-  return 5.9 * Math.pow(1.03, lvl - 50); // Lvl 150 = ~114x
+  return 3.4 * Math.pow(1.03, lvl - 25); // Lvl 150 = ~114x
 }
 
 function getGrowthFactor(level, unitCategory) {
@@ -1143,16 +1215,16 @@ function getGrowthFactor(level, unitCategory) {
     ? [
         { lvl: 1, factor: 1.75 },
         { lvl: 10, factor: 1.55 }, // Drop 1
-        { lvl: 30, factor: 1.33 }, // Drop 2
+        { lvl: 30, factor: 1.27 }, // Drop 2
         { lvl: 50, factor: 1.2 }, // Drop 3
-        { lvl: 150, factor: 1.2 },
+        { lvl: 150, factor: 1.19 },
       ]
     : [
         { lvl: 1, factor: 1.65 },
         { lvl: 10, factor: 1.48 }, // Drop 1
-        { lvl: 30, factor: 1.32 }, // Drop 2
+        { lvl: 30, factor: 1.3 }, // Drop 2
         { lvl: 50, factor: 1.2 }, // Drop 3
-        { lvl: 150, factor: 1.2 },
+        { lvl: 150, factor: 1.19 },
       ];
 
   // Find the current milestone segment
@@ -1200,7 +1272,7 @@ function getRequiredXp(unitOrLevel, category = "Main", xpDiscountMult = 1.0) {
 }
 
 function calculateWaveXp(enemyLevel, towerLevel) {
-  const baseWaveXp = 15 + enemyLevel * 5;
+  const baseWaveXp = 25 + enemyLevel * 5;
   const levelDiff = enemyLevel - towerLevel;
 
   if (levelDiff <= 0) {
@@ -1555,7 +1627,7 @@ function getRandomUnitTypeByCategory(category = "Main") {
   return matchingUnits[Math.floor(Math.random() * matchingUnits.length)];
 }
 
-function buyRandomUnit(category = "Main") {
+function buyRandomUnit(category = "Main", count = 1) {
   if (isBattleRunning()) return;
 
   if (category === "Rear") {
@@ -1574,43 +1646,67 @@ function buyRandomUnit(category = "Main") {
     }
   }
 
-  const cost = category === "Rear" ? rearUnitCost : unitCost;
-  const stCost = category === "Rear" ? rearStPullCost : stPullCost;
+  const singleGoldCost = category === "Rear" ? rearUnitCost : unitCost;
+  const singleStCost = category === "Rear" ? rearStPullCost : stPullCost;
+  const totalCost = singleGoldCost * count;
+  const totalStCost = singleStCost * count;
 
-  if (gold < cost) {
-    addLog(`Not enough gold to buy a ${category} tower.`);
+  if (gold < totalCost) {
+    addLog(
+      `Not enough gold to buy ${count > 1 ? `${count}x ` : "a "}${category} tower${count > 1 ? "s" : ""}.`,
+    );
     return;
   }
 
-  if (st < stCost) {
-    addLog(`Not enough ST to buy a ${category} tower.`);
+  if (st < totalStCost) {
+    addLog(
+      `Not enough ST to buy ${count > 1 ? `${count}x ` : "a "}${category} tower${count > 1 ? "s" : ""}.`,
+    );
     return;
   }
 
-  gold -= cost;
-  st -= stCost;
+  gold -= totalCost;
+  st -= totalStCost;
 
-  const unitType = getRandomUnitTypeByCategory(category);
-  const alreadyInInventory = inventory.some((u) => u.type === unitType);
-  const alreadyDeployedMain = deployedUnits.some(
-    (u) => u !== null && u.type === unitType,
-  );
-  const alreadyDeployedBase = deployedBaseUnits.some(
-    (u) => u !== null && u.type === unitType,
-  );
+  const obtainedCounts = {};
 
-  const alreadyOwns =
-    alreadyInInventory || alreadyDeployedMain || alreadyDeployedBase;
+  for (let i = 0; i < count; i++) {
+    const unitType = getRandomUnitTypeByCategory(category);
+    const alreadyInInventory = inventory.some((u) => u.type === unitType);
+    const alreadyDeployedMain = deployedUnits.some(
+      (u) => u !== null && u.type === unitType,
+    );
+    const alreadyDeployedBase = deployedBaseUnits.some(
+      (u) => u !== null && u.type === unitType,
+    );
 
-  const unit = createUnit(unitType);
-  unit.isLocked = !alreadyOwns;
+    const alreadyOwns =
+      alreadyInInventory || alreadyDeployedMain || alreadyDeployedBase;
 
-  inventory.push(unit);
+    const unit = createUnit(unitType);
+    unit.isLocked = !alreadyOwns;
+
+    inventory.push(unit);
+
+    const name = getUnitName(unit);
+    obtainedCounts[name] = (obtainedCounts[name] || 0) + 1;
+  }
 
   saveCampaignProgress();
-  addLog(
-    `Obtained ${getUnitName(unit)} (${category})! (-${cost} Gold, -${stCost} ST)`,
-  );
+
+  if (count === 1) {
+    const singleName = Object.keys(obtainedCounts)[0];
+    addLog(
+      `Obtained ${singleName} (${category})! (-${totalCost} Gold, -${totalStCost} ST)`,
+    );
+  } else {
+    const summary = Object.entries(obtainedCounts)
+      .map(([name, qty]) => (qty > 1 ? `${name} x${qty}` : name))
+      .join(", ");
+    addLog(
+      `Obtained ${count}x ${category} Towers: ${summary}! (-${totalCost} Gold, -${totalStCost} ST)`,
+    );
+  }
 
   updateUI();
   renderInventory();
@@ -2446,6 +2542,9 @@ function renderInventory() {
       const upgA = Number(a.upgradeCount) || 0;
       const upgB = Number(b.upgradeCount) || 0;
 
+      const lockA = a.isLocked ? 1 : 0;
+      const lockB = b.isLocked ? 1 : 0;
+
       let primaryDiff = 0;
 
       switch (inventorySort) {
@@ -2455,7 +2554,8 @@ function renderInventory() {
           if (rarityB !== rarityA) return rarityB - rarityA;
           if (nameA.localeCompare(nameB) !== 0)
             return nameA.localeCompare(nameB);
-          return b.id - a.id;
+          if (lockB !== lockA) return lockB - lockA;
+          return a.id - b.id;
 
         case "rarity": {
           primaryDiff = rarityB - rarityA;
@@ -2468,7 +2568,8 @@ function renderInventory() {
           if (nameA.localeCompare(nameB) !== 0)
             return nameA.localeCompare(nameB);
           if (lvlB !== lvlA) return lvlB - lvlA;
-          return b.id - a.id;
+          if (lockB !== lockA) return lockB - lockA;
+          return a.id - b.id;
         }
 
         case "upgrades": {
@@ -2486,14 +2587,16 @@ function renderInventory() {
           if (nameA.localeCompare(nameB) !== 0)
             return nameA.localeCompare(nameB);
           if (lvlB !== lvlA) return lvlB - lvlA;
-          return b.id - a.id;
+          if (lockB !== lockA) return lockB - lockA;
+          return a.id - b.id;
         }
 
         case "name":
           primaryDiff = nameA.localeCompare(nameB);
           if (primaryDiff !== 0) return primaryDiff * dir;
           if (lvlB !== lvlA) return lvlB - lvlA;
-          return b.id - a.id;
+          if (lockB !== lockA) return lockB - lockA;
+          return a.id - b.id;
 
         case "newest":
         default:
@@ -2531,7 +2634,9 @@ function renderInventory() {
     label.className = "unit-card-level";
 
     const isEnergyActive = energyMode !== "hide";
-    const energyText = isEnergyActive ? ` · E: ${Math.round(unit.energy ?? 100)}` : "";
+    const energyText = isEnergyActive
+      ? ` · E: ${Math.round(unit.energy ?? 100)}`
+      : "";
 
     // Omit rarity text whenever Energy Mode is enabled
     if (isExpanded) {
@@ -2541,7 +2646,7 @@ function renderInventory() {
         label.textContent = `Lv. ${unit.level} · ${data.rarity} · ${unit.upgradeCount}`;
       }
     } else if (inventorySort === "upgrades") {
-      label.textContent = `Upgrades: ${unit.upgradeCount}${energyText}`;
+      label.textContent = `Upgrades: ${unit.upgradeCount}`;
     } else {
       label.textContent = `Lv. ${unit.level}`;
     }
@@ -2558,7 +2663,7 @@ function renderInventory() {
       overlay.className = "energy-card-overlay";
 
       const hue = Math.round((pct / 100) * 200);
-      
+
       overlay.style.background = `hsla(${hue}, 85%, 45%, 0.28)`;
 
       overlay.style.width = "100%";
@@ -2570,7 +2675,17 @@ function renderInventory() {
   }
 }
 
+function closeQuickSacSettingsPopup() {
+  document.getElementById("quick-sac-settings-overlay")?.remove();
+}
+
+function closeQuickSacConfirmPopup() {
+  document.getElementById("quick-sac-confirm-overlay")?.remove();
+}
+
 function closeUnitPopup() {
+  closeQuickSacConfirmPopup();
+  closeQuickSacSettingsPopup();
   document.getElementById("unit-popup-overlay")?.remove();
 
   if (unitPopupEscapeHandler) {
@@ -2669,6 +2784,19 @@ function openUnitPopup(unitId) {
   statsTable.className = "popup-stats-table";
   details.appendChild(statsTable);
 
+  // Single delegated listener handles both locking the icon and unlocking when clicking away
+  popup.addEventListener("click", (e) => {
+    const clickedIcon = e.target.closest(".energy-info-icon");
+    if (clickedIcon) {
+      e.stopPropagation();
+      clickedIcon.classList.toggle("locked");
+    } else {
+      popup
+        .querySelector(".energy-info-icon.locked")
+        ?.classList.remove("locked");
+    }
+  });
+
   const damageMultiplier = 1 + 0.1 * (unit.level - 1);
   const unbuffedBaseDamage = Math.round(
     (data.damage + unit.upgradeBonuses.damage) * damageMultiplier,
@@ -2761,7 +2889,7 @@ function openUnitPopup(unitId) {
     const powerScoreStr = `Power Score: ${formatGameNumber(powerScore)}`;
     const lifetimeDamageStr = `Lifetime Dmg: ${formattedLifetimeDmg}`;
 
-    // --- Dynamic Energy Formatting ---
+    // --- Dynamic Energy Formatting with Info Tooltip ---
     const energyVal = unit.energy ?? 100;
     const maxEnergyVal = unit.maxEnergy ?? 100;
     const isFatigued = energyVal <= 0;
@@ -2773,9 +2901,18 @@ function openUnitPopup(unitId) {
           ? "energy-orange"
           : "energy-white";
 
+    const tooltipContent = `
+      <strong>⚡ Energy System:</strong><br>
+      • Deployed towers consume <strong>0.1 energy</strong> per cleared wave.<br>
+      • At <strong>0 Energy (Fatigued)</strong>: Tower deals <strong>-70% Damage</strong> and incurs a <strong>-90% Reward Penalty</strong>.<br>
+      • Towers in inventory regenerate <strong>0.2 energy</strong> on stage clear.<br>
+      • Use <strong>5+</strong> towers to get full energy gain.<br>
+      • Clearing lower waves will result in lower energy gain.
+    `.trim();
+
     const energyStr = `Energy: <span class="${energyColorClass}">${energyVal.toFixed(1)} / ${maxEnergyVal}</span>${
       isFatigued ? ' <span class="energy-red">⚠️</span>' : ""
-    }`;
+    } <span class="energy-info-icon" role="button" aria-label="Energy Info" tabindex="0">ℹ<span class="energy-tooltip">${tooltipContent}</span></span>`;
 
     const popupStatsRows = showMoreStats
       ? [
@@ -2994,7 +3131,15 @@ function openUnitPopup(unitId) {
   });
 
   unitPopupEscapeHandler = (event) => {
-    if (event.key === "Escape") closeUnitPopup();
+    if (event.key === "Escape") {
+      if (document.getElementById("quick-sac-confirm-overlay")) {
+        closeQuickSacConfirmPopup();
+      } else if (document.getElementById("quick-sac-settings-overlay")) {
+        closeQuickSacSettingsPopup();
+      } else {
+        closeUnitPopup();
+      }
+    }
   };
 
   document.addEventListener("keydown", unitPopupEscapeHandler);
@@ -3216,6 +3361,540 @@ function openUpgradeMenu(targetId) {
   layout.appendChild(panel);
 }
 
+function getQuickSacCandidates(targetId) {
+  const target = inventory.find((u) => u.id === targetId);
+  if (!target) return [];
+
+  const enforceMaxLevel = Boolean(quickSacSettings.maxLevelEnabled);
+  const maxLevelCap = Math.max(1, Math.floor(Number(quickSacSettings.maxLevel) || 1));
+
+  const enforceMaxUpgrades = Boolean(quickSacSettings.maxUpgradesEnabled);
+  const maxUpgradesCap = Math.max(
+    0,
+    Math.floor(Number(quickSacSettings.maxUpgrades) || 0),
+  );
+
+  // Group unlocked inventory towers (excluding the target tower) by tower type
+  const byType = {};
+  for (const unit of inventory) {
+    if (unit.id === target.id || unit.isLocked) continue;
+    const typeKey = unit.type || "unknown";
+    if (!byType[typeKey]) byType[typeKey] = [];
+    byType[typeKey].push(unit);
+  }
+
+  const toSacrifice = [];
+
+  for (const [typeKey, units] of Object.entries(byType)) {
+    const rarity = unitTypes[typeKey]?.rarity || "Common";
+    const setting = quickSacSettings[rarity];
+    if (!setting || !setting.enabled) continue;
+
+    const keepCount = Math.max(0, Math.floor(Number(setting.keep) || 0));
+    if (units.length <= keepCount) continue;
+
+    // Sort weakest first so the highest-level / most-upgraded copies are kept
+    const sortedWeakestFirst = units.slice().sort((a, b) => {
+      if ((a.level || 1) !== (b.level || 1)) {
+        return (a.level || 1) - (b.level || 1);
+      }
+      if ((a.upgradeCount || 0) !== (b.upgradeCount || 0)) {
+        return (a.upgradeCount || 0) - (b.upgradeCount || 0);
+      }
+      if ((a.xp || 0) !== (b.xp || 0)) {
+        return (a.xp || 0) - (b.xp || 0);
+      }
+      return a.id - b.id;
+    });
+
+    const sacCount = sortedWeakestFirst.length - keepCount;
+    const excessUnits = sortedWeakestFirst.slice(0, sacCount);
+
+    for (const unit of excessUnits) {
+      if (enforceMaxLevel && (unit.level || 1) > maxLevelCap) continue;
+      if (enforceMaxUpgrades && (unit.upgradeCount || 0) > maxUpgradesCap) continue;
+      toSacrifice.push(unit);
+    }
+  }
+
+  return toSacrifice;
+}
+
+function executeQuickSacrifice(targetId) {
+  if (stageEntered || isBattleRunning()) {
+    addLog("You cannot consume units while inside a world.");
+    return;
+  }
+
+  const target = inventory.find((u) => u.id === targetId);
+  if (!target) return;
+
+  const toSacrifice = getQuickSacCandidates(targetId);
+  if (toSacrifice.length === 0) {
+    addLog("No unlocked towers match your Quick Sac settings.");
+    return;
+  }
+
+  const removeIds = new Set(toSacrifice.map((u) => u.id));
+  const startLevel = target.level;
+  let totalEarnedXp = 0;
+
+  for (const unit of toSacrifice) {
+    const earnedXp =
+      typeof getConsumeXpBonus === "function"
+        ? getConsumeXpBonus(unit, target)
+        : Math.max(10, unit.level * 15 + (unit.upgradeCount || 0) * 20);
+
+    totalEarnedXp += earnedXp;
+    target.xp = (target.xp || 0) + earnedXp;
+
+    while (target.xp >= getRequiredXp(target)) {
+      target.xp -= getRequiredXp(target);
+      target.level++;
+    }
+  }
+
+  for (let i = inventory.length - 1; i >= 0; i--) {
+    if (removeIds.has(inventory[i].id)) {
+      inventory.splice(i, 1);
+    }
+  }
+
+  recalculateUnitStats(target);
+
+  const formattedXp =
+    typeof formatGameNumber === "function"
+      ? formatGameNumber(totalEarnedXp)
+      : totalEarnedXp;
+
+  if (target.level > startLevel) {
+    addLog(
+      `⭐ Quick Sacrificed ${toSacrifice.length} tower(s) into ${getUnitName(target)} (+${formattedXp} XP) → Level ${target.level}!`,
+    );
+  } else {
+    addLog(
+      `⚡ Quick Sacrificed ${toSacrifice.length} tower(s) into ${getUnitName(target)} (+${formattedXp} XP).`,
+    );
+  }
+
+  saveCampaignProgress();
+  updateUI();
+  renderInventory();
+  renderDeployment();
+  openUnitPopup(target.id);
+  openBoostMenu(target.id);
+}
+
+function openQuickSacSettingsPopup(targetId) {
+  closeQuickSacSettingsPopup();
+
+  const overlay = document.createElement("div");
+  overlay.id = "quick-sac-settings-overlay";
+  overlay.className = "unit-popup-overlay quick-sac-modal-overlay";
+  overlay.style.zIndex = "99999";
+
+  const modal = document.createElement("div");
+  modal.className = "unit-popup quick-sac-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const header = document.createElement("div");
+  header.className = "unit-popup-header";
+
+  const title = document.createElement("h2");
+  title.textContent = "Quick Sac Settings";
+  title.style.margin = "0";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "unit-popup-close";
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", closeQuickSacSettingsPopup);
+
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+
+  const autosaveAndRefresh = () => {
+    saveCampaignProgress();
+    if (targetId && document.getElementById("unit-popup-overlay")) {
+      openBoostMenu(targetId);
+    }
+  };
+
+  // --- Rarity Keep Rules ---
+  const colHeader = document.createElement("div");
+  colHeader.className = "quick-sac-col-header";
+  colHeader.innerHTML = `<span>Rarity</span><span>Keep Left</span>`;
+  modal.appendChild(colHeader);
+
+  const list = document.createElement("div");
+  list.className = "quick-sac-list";
+
+  for (const rarity of QUICK_SAC_RARITIES) {
+    if (!quickSacSettings[rarity]) {
+      quickSacSettings[rarity] = { enabled: false, keep: 0 };
+    }
+    const setting = quickSacSettings[rarity];
+
+    const row = document.createElement("div");
+    row.className = "quick-sac-row";
+
+    const label = document.createElement("label");
+    label.className = `quick-sac-rarity-label ${rarity.toLowerCase()}`;
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(setting.enabled);
+
+    const text = document.createElement("span");
+    text.textContent = rarity;
+
+    label.append(checkbox, text);
+
+    const keepInput = document.createElement("input");
+    keepInput.type = "number";
+    keepInput.className = "quick-sac-num-input";
+    keepInput.min = "0";
+    keepInput.step = "1";
+    keepInput.value = String(setting.keep ?? 0);
+    keepInput.title = `Keep ${setting.keep ?? 0} of each ${rarity} tower`;
+
+    checkbox.addEventListener("change", (e) => {
+      quickSacSettings[rarity].enabled = e.target.checked;
+      autosaveAndRefresh();
+    });
+
+    keepInput.addEventListener("input", (e) => {
+      if (e.target.value === "") return;
+      const parsed = Math.max(0, Math.floor(Number(e.target.value) || 0));
+      quickSacSettings[rarity].keep = parsed;
+      keepInput.title = `Keep ${parsed} of each ${rarity} tower`;
+      autosaveAndRefresh();
+    });
+
+    keepInput.addEventListener("blur", () => {
+      const parsed = Math.max(0, Math.floor(Number(keepInput.value) || 0));
+      quickSacSettings[rarity].keep = parsed;
+      keepInput.value = String(parsed);
+      autosaveAndRefresh();
+    });
+
+    row.append(label, keepInput);
+    list.appendChild(row);
+  }
+
+  modal.appendChild(list);
+
+  // --- Sacrifice Cap Limits (Level & Upgrades) ---
+  const limitsSection = document.createElement("div");
+  limitsSection.className = "quick-sac-setting-divider quick-sac-limits-list";
+
+  const createLimitRow = ({
+    labelText,
+    tooltip,
+    enabledKey,
+    valueKey,
+    minVal,
+  }) => {
+    const row = document.createElement("div");
+    row.className = "quick-sac-row";
+    row.title = tooltip;
+
+    const label = document.createElement("label");
+    label.className = "quick-sac-limit-label";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = Boolean(quickSacSettings[enabledKey]);
+
+    const span = document.createElement("span");
+    span.textContent = labelText;
+
+    label.append(cb, span);
+
+    const numInput = document.createElement("input");
+    numInput.type = "number";
+    numInput.className = "quick-sac-num-input";
+    numInput.min = String(minVal);
+    numInput.step = "1";
+    numInput.value = String(quickSacSettings[valueKey] ?? minVal);
+    numInput.title = tooltip;
+
+    cb.addEventListener("change", (e) => {
+      quickSacSettings[enabledKey] = e.target.checked;
+      autosaveAndRefresh();
+    });
+
+    numInput.addEventListener("input", (e) => {
+      if (e.target.value === "") return;
+      const parsed = Math.max(
+        minVal,
+        Math.floor(Number(e.target.value) || minVal),
+      );
+      quickSacSettings[valueKey] = parsed;
+      autosaveAndRefresh();
+    });
+
+    numInput.addEventListener("blur", () => {
+      const parsed = Math.max(
+        minVal,
+        Math.floor(Number(numInput.value) || minVal),
+      );
+      quickSacSettings[valueKey] = parsed;
+      numInput.value = String(parsed);
+      autosaveAndRefresh();
+    });
+
+    row.append(label, numInput);
+    return row;
+  };
+
+  limitsSection.append(
+    createLimitRow({
+      labelText: "Max Level",
+      tooltip: "Only sacrifice towers at or below this level",
+      enabledKey: "maxLevelEnabled",
+      valueKey: "maxLevel",
+      minVal: 1,
+    }),
+    createLimitRow({
+      labelText: "Max Upgrades",
+      tooltip: "Only sacrifice towers at or below this upgrade count",
+      enabledKey: "maxUpgradesEnabled",
+      valueKey: "maxUpgrades",
+      minVal: 0,
+    }),
+  );
+
+  modal.appendChild(limitsSection);
+
+  // --- Ask for Confirmation Toggle ---
+  const confirmOptionRow = document.createElement("div");
+  confirmOptionRow.className = "quick-sac-setting-divider";
+
+  const confirmLabel = document.createElement("label");
+  confirmLabel.className = "quick-sac-confirm-toggle";
+
+  const confirmCheckbox = document.createElement("input");
+  confirmCheckbox.type = "checkbox";
+  confirmCheckbox.checked = quickSacSettings.askConfirmation !== false;
+
+  const confirmText = document.createElement("span");
+  confirmText.textContent = "Ask for confirmation";
+
+  confirmCheckbox.addEventListener("change", (e) => {
+    quickSacSettings.askConfirmation = e.target.checked;
+    saveCampaignProgress();
+  });
+
+  confirmLabel.append(confirmCheckbox, confirmText);
+  confirmOptionRow.appendChild(confirmLabel);
+  modal.appendChild(confirmOptionRow);
+
+  overlay.appendChild(modal);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      closeQuickSacSettingsPopup();
+    }
+  });
+
+  document.body.appendChild(overlay);
+}
+
+function handleQuickSacClick(targetId) {
+  if (stageEntered || isBattleRunning()) {
+    addLog("You cannot consume units while inside a world.");
+    return;
+  }
+
+  const candidates = getQuickSacCandidates(targetId);
+  if (candidates.length === 0) {
+    addLog("No unlocked towers match your Quick Sac settings.");
+    return;
+  }
+
+  if (quickSacSettings.askConfirmation !== false) {
+    openQuickSacConfirmPopup(targetId, candidates);
+  } else {
+    executeQuickSacrifice(targetId);
+  }
+}
+
+function openQuickSacConfirmPopup(targetId, candidates) {
+  closeQuickSacConfirmPopup();
+
+  const target = inventory.find((u) => u.id === targetId);
+  if (!target) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "quick-sac-confirm-overlay";
+  overlay.className = "unit-popup-overlay quick-sac-modal-overlay";
+  overlay.style.zIndex = "99999";
+
+  const modal = document.createElement("div");
+  modal.className = "unit-popup quick-sac-confirm-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.style.width = "100%";
+  modal.style.maxWidth = "680px";
+  modal.style.boxSizing = "border-box";
+
+  const header = document.createElement("div");
+  header.className = "unit-popup-header";
+
+  const title = document.createElement("h2");
+  title.textContent = "Confirm Quick Sacrifice";
+  title.style.margin = "0";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "unit-popup-close";
+  closeBtn.style.width = "auto";
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", closeQuickSacConfirmPopup);
+
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+
+  let totalXp = 0;
+  for (const unit of candidates) {
+    totalXp +=
+      typeof getConsumeXpBonus === "function"
+        ? getConsumeXpBonus(unit, target)
+        : Math.max(10, unit.level * 15 + (unit.upgradeCount || 0) * 20);
+  }
+
+  const localRarityRank = {
+    Mythic: 6,
+    Legendary: 5,
+    Epic: 4,
+    Rare: 3,
+    Uncommon: 2,
+    Common: 1,
+  };
+
+  const sortedCandidates = candidates.slice().sort((a, b) => {
+    const rA = localRarityRank[unitTypes[a.type]?.rarity || "Common"] || 0;
+    const rB = localRarityRank[unitTypes[b.type]?.rarity || "Common"] || 0;
+    if (rA !== rB) return rB - rA;
+    if ((a.level || 1) !== (b.level || 1)) return (b.level || 1) - (a.level || 1);
+    return (b.upgradeCount || 0) - (a.upgradeCount || 0);
+  });
+
+  const formattedXp =
+    typeof formatGameNumber === "function" ? formatGameNumber(totalXp) : totalXp;
+
+  const summary = document.createElement("div");
+  summary.className = "quick-sac-confirm-summary";
+  summary.innerHTML = `Sacrificing <strong>${candidates.length}</strong> tower(s) into <strong>${getUnitName(target)}</strong> for <span class="quick-sac-xp-gain">+${formattedXp} XP</span>`;
+  modal.appendChild(summary);
+
+  const grid = document.createElement("div");
+  grid.className = "quick-sac-confirm-grid";
+
+  for (const unit of sortedCandidates) {
+    const typeInfo = unitTypes[unit.type] || {};
+    const rarity = typeInfo.rarity || "Common";
+    const icon = unit.icon || typeInfo.icon || "";
+
+    const card = document.createElement("div");
+    card.className = `quick-sac-confirm-card rarity-border-${rarity.toLowerCase()}`;
+
+    const topRow = document.createElement("div");
+    topRow.className = "quick-sac-card-top";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = `quick-sac-card-name ${rarity.toLowerCase()}`;
+    nameEl.textContent = `${icon ? `${icon} ` : ""}${getUnitName(unit)}`;
+
+    const lvlEl = document.createElement("span");
+    lvlEl.className = "quick-sac-card-level";
+    lvlEl.textContent = `Lv.${unit.level || 1}${unit.upgradeCount ? ` (+${unit.upgradeCount})` : ""}`;
+
+    topRow.append(nameEl, lvlEl);
+
+    const rarityEl = document.createElement("div");
+    rarityEl.className = `quick-sac-card-rarity ${rarity.toLowerCase()}`;
+    rarityEl.textContent = rarity;
+
+    card.append(topRow, rarityEl);
+    grid.appendChild(card);
+  }
+
+  modal.appendChild(grid);
+
+  const footer = document.createElement("div");
+  footer.className = "quick-sac-confirm-footer";
+  footer.style.display = "flex";
+  footer.style.alignItems = "center";
+  footer.style.justifyContent = "space-between";
+  footer.style.gap = "12px";
+
+  const dontShowLabel = document.createElement("label");
+  dontShowLabel.className = "quick-sac-dont-show";
+  dontShowLabel.style.display = "inline-flex";
+  dontShowLabel.style.alignItems = "center";
+  dontShowLabel.style.gap = "8px";
+  dontShowLabel.style.margin = "0";
+
+  const dontShowCheckbox = document.createElement("input");
+  dontShowCheckbox.type = "checkbox";
+  dontShowCheckbox.checked = false;
+  dontShowCheckbox.style.width = "16px";
+  dontShowCheckbox.style.height = "16px";
+  dontShowCheckbox.style.margin = "0";
+
+  const dontShowText = document.createElement("span");
+  dontShowText.textContent = "Don't show again";
+
+  dontShowLabel.append(dontShowCheckbox, dontShowText);
+
+  const actions = document.createElement("div");
+  actions.className = "quick-sac-confirm-actions";
+  actions.style.display = "grid";
+  actions.style.gridTemplateColumns = "repeat(2, minmax(110px, 1fr))";
+  actions.style.gap = "10px";
+  actions.style.marginLeft = "auto";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "quick-sac-action-btn cancel";
+  cancelBtn.style.height = "38px";
+  cancelBtn.style.margin = "0";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", closeQuickSacConfirmPopup);
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "quick-sac-action-btn confirm";
+  confirmBtn.style.height = "38px";
+  confirmBtn.style.margin = "0";
+  confirmBtn.textContent = "Confirm";
+  confirmBtn.addEventListener("click", () => {
+    if (dontShowCheckbox.checked) {
+      quickSacSettings.askConfirmation = false;
+      saveCampaignProgress();
+    }
+    closeQuickSacConfirmPopup();
+    executeQuickSacrifice(target.id);
+  });
+
+  actions.append(cancelBtn, confirmBtn);
+  footer.append(dontShowLabel, actions);
+  modal.appendChild(footer);
+
+  overlay.appendChild(modal);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      closeQuickSacConfirmPopup();
+    }
+  });
+
+  document.body.appendChild(overlay);
+}
+
 function openBoostMenu(targetId) {
   const target = inventory.find((unit) => unit.id === targetId);
   if (!target) return;
@@ -3243,6 +3922,42 @@ function openBoostMenu(targetId) {
 
   header.append(title, closeButton);
   panel.appendChild(header);
+
+  // --- Quick Sacrifice Bar ---
+  const quickSacCandidates = getQuickSacCandidates(target.id);
+  const quickSacBar = document.createElement("div");
+  quickSacBar.className = "quick-sac-bar";
+  quickSacBar.style.display = "flex";
+  quickSacBar.style.alignItems = "center";
+  quickSacBar.style.gap = "6px";
+  quickSacBar.style.marginBottom = "8px";
+
+  const quickSacBtn = document.createElement("button");
+  quickSacBtn.type = "button";
+  quickSacBtn.className = "quick-sac-btn";
+  quickSacBtn.style.flex = "1";
+  quickSacBtn.style.width = "auto";
+  quickSacBtn.textContent = `⚡ Quick Sac (${quickSacCandidates.length})`;
+  quickSacBtn.disabled =
+    stageEntered || isBattleRunning() || quickSacCandidates.length === 0;
+  quickSacBtn.addEventListener("click", () => handleQuickSacClick(target.id));
+
+  const quickSacSettingsBtn = document.createElement("button");
+  quickSacSettingsBtn.type = "button";
+  quickSacSettingsBtn.className = "quick-sac-settings-btn";
+  quickSacSettingsBtn.style.width = "36px";
+  quickSacSettingsBtn.style.minWidth = "36px";
+  quickSacSettingsBtn.style.flex = "0 0 36px";
+  quickSacSettingsBtn.textContent = "⚙️";
+  quickSacSettingsBtn.title = "Quick Sac Settings";
+  quickSacSettingsBtn.setAttribute("aria-label", "Quick Sac Settings");
+  quickSacSettingsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openQuickSacSettingsPopup(target.id);
+  });
+
+  quickSacBar.append(quickSacBtn, quickSacSettingsBtn);
+  panel.appendChild(quickSacBar);
 
   // --- Sort & Direction Controls ---
   const sortContainer = document.createElement("div");
@@ -4850,6 +5565,11 @@ function updateUI() {
       isBattleRunning() || gold < unitCost || st < stPullCost;
   }
 
+  if (buyUnit10xButton) {
+    buyUnit10xButton.disabled =
+      isBattleRunning() || gold < unitCost * 10 || st < stPullCost * 10;
+  }
+
   if (buyRearUnitButton) {
     const rearUnlocked =
       typeof isRearBuildUnlocked === "function"
@@ -4865,6 +5585,14 @@ function updateUI() {
       buyRearUnitButton.disabled =
         isBattleRunning() || gold < rearUnitCost || st < rearStPullCost;
       buyRearUnitButton.textContent = "Build Rear Tower (100 Gold + 10 ST)";
+    }
+
+    if (buyRearUnit10xButton) {
+      buyRearUnit10xButton.disabled =
+        !rearUnlocked ||
+        isBattleRunning() ||
+        gold < rearUnitCost * 10 ||
+        st < rearStPullCost * 10;
     }
   }
 
@@ -4887,7 +5615,9 @@ function updateUI() {
 
 // Event Listeners Setup
 buyUnitButton?.addEventListener("click", () => buyRandomUnit("Main"));
+buyUnit10xButton?.addEventListener("click", () => buyRandomUnit("Main", 10));
 buyRearUnitButton?.addEventListener("click", () => buyRandomUnit("Rear"));
+buyRearUnit10xButton?.addEventListener("click", () => buyRandomUnit("Rear", 10));
 startWaveButton?.addEventListener("click", startWave);
 
 resetStorageButton?.addEventListener("click", () => {

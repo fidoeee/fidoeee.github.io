@@ -105,12 +105,12 @@ const rarityRank = {
 };
 
 const rarityMultipliers = {
-  Common: 1.0,
-  Uncommon: 1.15,
-  Rare: 1.35,
-  Epic: 1.6,
-  Legendary: 1.9,
-  Mythic: 2.25,
+  Common: 2.0,  
+  Uncommon: 1.7,   
+  Rare: 1.4,   
+  Epic: 1.1,  
+  Legendary: 0.85, 
+  Mythic: 0.6, 
 };
 
 const MAIN_RARITY_WEIGHTS = {
