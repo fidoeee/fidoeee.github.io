@@ -90,7 +90,7 @@ const enemyTypes = {
   siphon_unit: {
     name: "Siphon Link",
     health: 650,
-    speed: 0.7,
+    speed: 0.6,
     reward: 8,
     damage: 20,
     armor: 35,
@@ -117,10 +117,18 @@ const enemyTypes = {
     reward: 10,
     armor: 15,
   },
+  miniboss8: {
+    name: "Miniboss",
+    health: 12000,
+    speed: 0.65,
+    damage: 999,
+    reward: 10,
+    armor: 40,
+  },
   boss: {
     name: "Garrison Titan",
     health: 20000,
-    speed: 0.2,
+    speed: 0.15,
     damage: 999,
     reward: 15,
     armor: 30,
@@ -129,7 +137,7 @@ const enemyTypes = {
   // --- MID & LATE WORLD BOSSES ---
   juggernaut: {
     name: "Ironclad Juggernaut",
-    health: 50000,
+    health: 40000,
     speed: 0.15,
     damage: 999,
     reward: 25,
@@ -137,7 +145,7 @@ const enemyTypes = {
   },
   blitz_boss: {
     name: "Speed Demon Prime",
-    health: 39000,
+    health: 36000,
     speed: 0.7,
     damage: 999,
     reward: 30,
@@ -157,7 +165,7 @@ const enemyTypes = {
   },
   fortress_core: {
     name: "Aegis Core Sentinel",
-    health: 140000,
+    health: 130000,
     speed: 0.1,
     damage: 999,
     reward: 50,
@@ -165,53 +173,53 @@ const enemyTypes = {
   },
   void_colossus: {
     name: "Void Colossus",
-    health: 260000,
-    speed: 0.15,
+    health: 190000,
+    speed: 0.14,
     damage: 999,
     reward: 75,
     armor: 160,
   },
   apex_overlord: {
     name: "Apex Vanguard Overlord",
-    health: 250000,
-    speed: 0.16,
+    health: 200000,
+    speed: 0.1,
     damage: 999,
     reward: 120,
     armor: 220,
   },
   dread_titan: {
     name: "Titan Dreadnought",
-    health: 500000,
-    speed: 0.12,
+    health: 250000,
+    speed: 0.08,
     damage: 999,
     reward: 180,
-    armor: 300,
+    armor: 400,
   },
 
   // --- WORLD 10 MULTI-BOSS COMPONENTS ---
   omega_titan_alpha: {
     name: "Omega Core Titan Alpha",
     health: 750000,
-    speed: 0.08,
+    speed: 0.03,
     damage: 999,
     reward: 150,
-    armor: 3000,
+    armor: 1500,
   },
   omega_titan_beta: {
     name: "Omega Core Titan Beta",
     health: 600000,
-    speed: 0.0801,
+    speed: 0.02,
     damage: 999,
     reward: 150,
-    armor: 10000,
+    armor: 7500,
   },
   omega_blitz_miniboss: {
     name: "Vanguard Blitz Stalker",
-    health: 200000,
+    health: 50000,
     speed: 0.45,
     damage: 999,
     reward: 100,
-    armor: 1000,
+    armor: 500,
   },
 
   /* ==========================================================================
@@ -296,7 +304,7 @@ const enemyTypes = {
     name: "Target C-090",
     level: 90,
     health: 297000,
-    speed: 0.12,
+    speed: 0.09,
     damage: 999,
     reward: 350,
     armor: 80,
@@ -308,10 +316,10 @@ const enemyTypes = {
     name: "Target C-100",
     level: 100,
     health: 368000,
-    speed: 0.09,
+    speed: 0.05,
     damage: 999,
     reward: 420,
-    armor: 450,
+    armor: 5000,
   },
   c_boss_11: {
     name: "Target C-110",
@@ -715,10 +723,10 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
         waveEnemies = ["juggernaut"];
         break;
       case 4:
-        waveEnemies = ["blitz_boss"];
+        waveEnemies = ["blitz_boss", "miniboss"];
         break;
       case 5:
-        waveEnemies = ["siphon_boss"];
+        waveEnemies = ["siphon_boss", "miniboss"];
         break;
       case 6:
         waveEnemies = ["fortress_core"];
@@ -727,7 +735,7 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
         waveEnemies = ["void_colossus"];
         break;
       case 8:
-        waveEnemies = ["apex_overlord"];
+        waveEnemies = ["apex_overlord", "miniboss8"];
         break;
       case 9:
         waveEnemies = ["dread_titan"];
@@ -744,7 +752,8 @@ function generateWaveStructure(world, stageInWorld, waveIndex, maxWaves) {
         break;
     }
   } else if (stageInWorld === 5 && isFinalWave) {
-    waveEnemies = world === 1 ? ["miniboss1"] : ["miniboss"];
+    waveEnemies =
+      world === 1 ? ["miniboss1"] : world === 8 ? ["miniboss8"] : ["miniboss"];
   } else {
     waveEnemies = getStageWaveTemplate(
       world,
@@ -1062,6 +1071,8 @@ const stages = Array.from(
     const isMinibossStage = stageInWorld === 5;
     const isBossStage = stageInWorld === 10;
     const waveCount = index < 4 ? 3 : 5;
+    const bossBonus = isBossStage ? 1.5 : 1;
+    const minibossBonus = isMinibossStage ? 1.25 : 1;
 
     const stageWaves = Array.from({ length: waveCount }, (_, waveIndex) =>
       generateWaveStructure(world, stageInWorld, waveIndex, waveCount),
@@ -1086,7 +1097,7 @@ const stages = Array.from(
       enemyLevel,
       name: stageName,
       description,
-      reward: 40 + index * 12, // Standard base reward for ALL stages
+      reward: 40 + index * 12 * bossBonus * minibossBonus, // Standard base reward for ALL stages
       waves: stageWaves,
     };
   },

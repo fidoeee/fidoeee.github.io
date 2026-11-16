@@ -10,17 +10,15 @@ const challengeBonusNodes = {
   cb_base_damage: {
     id: "cb_base_damage",
     name: "Flat Base Damage",
-    costPerLevel: (lvl) => 1 + Math.floor(lvl / 2),
-    getBonus: (lvl) => lvl * 0.5,
+    costPerLevel: (lvl) => 1 + Math.floor(lvl / 10),
     getDescription: (lvl) =>
-      `All towers +${(lvl * 0.5).toFixed(1)} base damage.`,
+      `All towers +${(lvl * 0.2).toFixed(1)} base damage.`,
   },
   cb_reload_speed: {
     id: "cb_reload_speed",
     name: "Flat Fire Rate",
-    costPerLevel: (lvl) => 1 + Math.floor(lvl / 2),
-    getBonus: (lvl) => lvl * 0.1,
-    getDescription: (lvl) => `All towers +${(lvl * 0.1).toFixed(2)} fire rate.`,
+    costPerLevel: (lvl) => 1 + Math.floor(lvl / 10),
+    getDescription: (lvl) => `All towers +${(lvl * 0.01).toFixed(2)} fire rate.`,
   },
 };
 
@@ -86,12 +84,12 @@ const techNodes = {
     costMultiplier: 3,
     maxLevel: 5,
     requiresNode: null,
-    getBonus: (lvl) => lvl * 0.1,
+    getBonus: (lvl) => lvl * 0.15,
     getDescription: (lvl) => {
-      if (lvl >= 5) return "Base towers +50% damage (Maxed)";
+      if (lvl >= 5) return "Base towers +75% damage (Maxed)";
       const nextLvl = lvl + 1;
-      const total = nextLvl * 10;
-      return `Base towers +${total}% damage (+10%)`;
+      const total = nextLvl * 15;
+      return `Base towers +${total}% damage (+15%)`;
     },
   },
   artillery_cooldown: {
@@ -269,12 +267,12 @@ const techNodes = {
     costMultiplier: 3,
     maxLevel: 3,
     requiresNode: null,
-    getBonus: (lvl) => lvl * 0.15,
+    getBonus: (lvl) => lvl * 0.20,
     getDescription: (lvl) => {
-      if (lvl >= 3) return "All towers +45% global damage (Maxed)";
+      if (lvl >= 3) return "All towers +60% global damage (Maxed)";
       const nextLvl = lvl + 1;
-      const total = nextLvl * 15;
-      return `All towers +${total}% global damage (+15%)`;
+      const total = nextLvl * 20;
+      return `All towers +${total}% global damage (+20%)`;
     },
   },
   spec_extra_slot: {

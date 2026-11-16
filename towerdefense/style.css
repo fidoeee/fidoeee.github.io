@@ -53,6 +53,38 @@ p {
   scrollbar-width: none; /* Firefox */
 }
 
+:root,
+select {
+  color-scheme: dark;
+}
+
+select {
+  background-color: #1f2937;
+  color: #f3f4f6;
+  border: 1px solid #374151;
+}
+
+select option,
+select optgroup {
+  background-color: #111827;
+  color: #f3f4f6;
+}
+
+select option:checked {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+select option:disabled {
+  background-color: #111827;
+  color: #6b7280;
+}
+
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ==========================================================================
    2. HEADER & STATS BAR
    ========================================================================== */
@@ -327,6 +359,17 @@ button:disabled {
 .slot-dropdown-container {
   position: relative;
   display: inline-block;
+}
+
+.slot-action-btn.io {
+  background: #2b3545;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+}
+
+.slot-action-btn.io:hover:not(:disabled) {
+  background: #38465c;
+  border-color: #60a5fa;
 }
 
 .slot-action-btn {
@@ -915,6 +958,47 @@ body.no-scroll {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   align-items: stretch;
+}
+
+/* New Tower Type Highlight & Badge */
+.unit-card {
+  position: relative;
+}
+
+.unit-card .inventory-new-badge {
+  position: absolute;
+  bottom: 5px;
+  right: 6px;
+  top: auto;
+  left: auto;
+  margin: 0;
+  padding: 2px 5px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #fbbf24, #d97706);
+  color: #111827;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
+  pointer-events: none;
+  z-index: 999;
+}
+
+#toggle-inventory-button.has-new-towers {
+  border-color: #f59e0b;
+  color: #fbbf24;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
+}
+
+@keyframes newTowerCardGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(251, 191, 36, 0.75);
+  }
 }
 
 .unit-card {
@@ -2664,13 +2748,28 @@ body.no-scroll {
 }
 
 .enemy-heading strong {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.enemy-heading span {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .enemy-details {
   color: #bdc7d6;
   font-size: 0.85rem;
   margin-bottom: 8px;
+}
+
+.enemy-details span {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .health-track,
@@ -4473,3 +4572,473 @@ body {
   touch-action: manipulation;
 }
 
+/* ==========================================================================
+   16. LIQUID GLASS UI THEME
+   ========================================================================== */
+
+body.liquid-glass .unit-card.glass-border-probe,
+body.liquid-glass .unit-popup.glass-border-probe {
+  border-color: revert !important;
+}
+
+body.liquid-glass {
+  --glass-main-alpha: 0.25;
+  --glass-main-blur: 8px;
+  --glass-popup-alpha: 0.35;
+  --glass-popup-blur: 12px;
+  --glass-bg-alpha: 0.30;
+  --glass-bg-blur: 0px;
+  --glass-main-border-alpha: 0.20;
+  --glass-main-border-blur: 4px;
+  --glass-popup-border-alpha: 0.35;
+  --glass-popup-border-blur: 8px;
+  --glass-unit-border-alpha: 0.75;
+  --glass-unit-border-blur: 8px;
+  --glass-hue: 215deg;
+  --glass-saturation: 0%;
+  --glass-tint: 0%;
+  --glass-gloss: 0.5;
+  --glass-border-color: #ffffff;
+
+  /* Lightness scales from 14% (dark smoked) to 86% (bright frost) */
+  --glass-lightness: calc(14% + var(--glass-tint) * 0.72);
+  --glass-neutral: hsl(0 0% var(--glass-lightness));
+  --glass-tinted: hsl(var(--glass-hue) 88% var(--glass-lightness));
+  --glass-base-surface: color-mix(in srgb, var(--glass-tinted) var(--glass-saturation), var(--glass-neutral));
+
+  --glass-btn-lightness: calc(22% + var(--glass-tint) * 0.68);
+  --glass-btn-neutral: hsl(0 0% var(--glass-btn-lightness));
+  --glass-btn-tinted: hsl(var(--glass-hue) 88% var(--glass-btn-lightness));
+  --glass-button-surface: color-mix(in srgb, var(--glass-btn-tinted) var(--glass-saturation), var(--glass-btn-neutral));
+
+  --glass-main-fill: color-mix(in srgb, var(--glass-base-surface) calc(var(--glass-main-alpha) * 100%), transparent);
+  --glass-card-fill: color-mix(in srgb, var(--glass-base-surface) calc(var(--glass-main-alpha) * 85%), transparent);
+  --glass-popup-fill: color-mix(in srgb, var(--glass-base-surface) calc(var(--glass-popup-alpha) * 100%), transparent);
+
+  --glass-backdrop: blur(var(--glass-main-blur)) saturate(145%);
+  --glass-card-backdrop: blur(calc(var(--glass-main-blur) * 0.5)) saturate(140%);
+  --glass-popup-backdrop: blur(var(--glass-popup-blur)) saturate(150%);
+
+  /* Subtle Inverse Radial Edge Sheen */
+  --glass-gloss-sheen: radial-gradient(
+    ellipse at 46% 46%,
+    transparent 64%,
+    rgba(255, 255, 255, calc(var(--glass-gloss) * 0.08)) 84%,
+    rgba(255, 255, 255, calc(var(--glass-gloss) * 0.34)) 100%
+  );
+
+  background-color: #0d121c;
+}
+
+body.liquid-glass::before {
+  content: "";
+  position: fixed;
+  inset: -24px;
+  z-index: -1;
+  background-image:
+    var(--glass-custom-bg, none),
+    radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.18) 0%, transparent 42%),
+    radial-gradient(circle at 85% 25%, rgba(99, 102, 241, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 50% 88%, rgba(16, 185, 129, 0.13) 0%, transparent 50%);
+  background-size: cover, auto, auto, auto;
+  background-position: center, center, center, center;
+  background-repeat: no-repeat;
+  filter: blur(var(--glass-custom-bg-blur, 0px));
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Liquid Glass Toggle Row & Reset Button */
+.glass-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.glass-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.glass-reset-btn {
+  display: none;
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+body.liquid-glass .glass-reset-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Options Liquid Glass Slider Grid */
+.liquid-glass-sliders {
+  display: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+body.liquid-glass .liquid-glass-sliders:not([hidden]) {
+  display: grid;
+}
+
+@media (max-width: 768px) {
+  .liquid-glass-sliders {
+    grid-template-columns: 1fr;
+  }
+}
+
+.option-slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #1f2937;
+  border: 1px solid #374151;
+  font-size: 0.84rem;
+  color: #e5e7eb;
+}
+
+.glass-bg-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 1;
+}
+
+.glass-bg-btn {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.3;
+  text-align: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.glass-bg-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.option-slider-row span:first-child {
+  white-space: nowrap;
+}
+
+.option-slider-row input[type="range"] {
+  flex: 1;
+  min-width: 60px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+/* Rainbow track on the Glass Color slider */
+.option-slider-row input[type="range"].glass-hue-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #ff3b30 0%,
+    #ffcc00 17%,
+    #34c759 33%,
+    #00c7be 50%,
+    #007aff 67%,
+    #af52de 83%,
+    #ff3b30 100%
+  );
+  accent-color: #ffffff;
+}
+
+.glass-slider-badge {
+  min-width: 42px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #93c5fd;
+  white-space: nowrap;
+}
+
+/* Sticky Top Bar */
+body.liquid-glass .title-bar {
+  background: var(--glass-gloss-sheen), var(--glass-main-fill);
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  border-bottom: 1px solid rgba(255, 255, 255, var(--glass-main-border-alpha));
+  box-shadow:
+    inset 0 -1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.25)),
+    0 2px var(--glass-main-border-blur) rgba(255, 255, 255, calc(var(--glass-main-border-alpha) * 0.35)),
+    0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+/* Main Panels, Top Stats Bar & Containers (1st-Level UI) */
+body.liquid-glass .panel,
+body.liquid-glass .stat,
+body.liquid-glass .top-bar,
+body.liquid-glass .tech-node {
+  background: var(--glass-gloss-sheen), var(--glass-main-fill);
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  border-color: rgba(255, 255, 255, var(--glass-main-border-alpha));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.35)),
+    0 0 var(--glass-main-border-blur) rgba(255, 255, 255, calc(var(--glass-main-border-alpha) * 0.45)),
+    0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+/* Inner Cards, Slots, Stage Tiles, Option Rows & Log (2nd-Level UI) */
+body.liquid-glass .slot,
+body.liquid-glass .stage-button,
+body.liquid-glass .stage-details,
+body.liquid-glass .tech-section,
+body.liquid-glass .tech-node-card,
+body.liquid-glass .enemy-card,
+body.liquid-glass .stat-tower-card,
+body.liquid-glass .tower-stat-card,
+body.liquid-glass .stage-rewards-box,
+body.liquid-glass .option-group,
+body.liquid-glass .option-row,
+body.liquid-glass .option-slider-row,
+body.liquid-glass .option-segmented-row,
+body.liquid-glass .auto-repeat-row,
+body.liquid-glass .preset-collapsible,
+body.liquid-glass .save-slot-display,
+body.liquid-glass .log {
+  background: var(--glass-gloss-sheen), var(--glass-card-fill);
+  border-color: rgba(255, 255, 255, var(--glass-main-border-alpha));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.28)),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+body.liquid-glass .slot.base-slot {
+  background:
+    var(--glass-gloss-sheen),
+    color-mix(
+      in srgb,
+      color-mix(in srgb, hsl(var(--glass-hue) 88% 24%) var(--glass-saturation), hsl(215 35% 22%)) calc(var(--glass-main-alpha) * 85%),
+      transparent
+    );
+  border-color: rgba(147, 197, 253, calc(var(--glass-main-border-alpha) * 1.4));
+}
+
+/* Rarity Border Colors for Liquid Glass */
+body.liquid-glass .unit-card.common,
+body.liquid-glass .unit-popup.common {
+  --glass-border-color: #9ca3af;
+}
+
+body.liquid-glass .unit-card.uncommon,
+body.liquid-glass .unit-popup.uncommon {
+  --glass-border-color: #34d399;
+}
+
+body.liquid-glass .unit-card.rare,
+body.liquid-glass .unit-popup.rare {
+  --glass-border-color: #60a5fa;
+}
+
+body.liquid-glass .unit-card.epic,
+body.liquid-glass .unit-popup.epic {
+  --glass-border-color: #a855f7;
+}
+
+body.liquid-glass .unit-card.legendary,
+body.liquid-glass .unit-popup.legendary {
+  --glass-border-color: #f59e0b;
+}
+
+body.liquid-glass .unit-card.mythic,
+body.liquid-glass .unit-popup.mythic {
+  --glass-border-color: #ff0000;
+}
+
+body.liquid-glass .unit-card.selected-target {
+  --glass-border-color: #6baee8;
+}
+
+/* Warehouse & Non-Rarity Unit Tiles */
+body.liquid-glass .unit-card {
+  background: var(--glass-gloss-sheen), var(--glass-card-fill);
+  border-color: rgba(255, 255, 255, var(--glass-main-border-alpha));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.28)),
+    0 0 var(--glass-main-border-blur) rgba(255, 255, 255, calc(var(--glass-main-border-alpha) * 0.35));
+}
+
+/* Rarity-Highlighted Inventory & Consume Unit Cards */
+body.liquid-glass .unit-card:is(.common, .uncommon, .rare, .epic, .legendary, .mythic, .selected-target) {
+  background: var(--glass-gloss-sheen), var(--glass-card-fill);
+  border: 2px solid color-mix(in srgb, var(--glass-border-color) calc(var(--glass-unit-border-alpha) * 100%), transparent) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--glass-border-color) calc(var(--glass-gloss) * 45%), transparent),
+    0 0 var(--glass-unit-border-blur) color-mix(in srgb, var(--glass-border-color) calc(var(--glass-unit-border-alpha) * 75%), transparent);
+}
+
+/* Glass Buttons & Dropdowns */
+body.liquid-glass button:not(.unit-card):not(.reset-button):not(.stage-exit-btn):not(.stage-clear-continue-btn):not(.segmented-btn.active):not(.slot-action-btn),
+body.liquid-glass select {
+  background:
+    var(--glass-gloss-sheen),
+    color-mix(in srgb, var(--glass-button-surface) calc(var(--glass-main-alpha) * 85%), transparent);
+  border-color: rgba(255, 255, 255, var(--glass-main-border-alpha));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.35)),
+    0 0 var(--glass-main-border-blur) rgba(255, 255, 255, calc(var(--glass-main-border-alpha) * 0.35));
+}
+
+body.liquid-glass button:not(.unit-card):not(.reset-button):not(.stage-exit-btn):not(.stage-clear-continue-btn):not(.segmented-btn.active):not(.slot-action-btn):hover:not(:disabled) {
+  background:
+    var(--glass-gloss-sheen),
+    color-mix(in srgb, var(--glass-button-surface) min(100%, calc(var(--glass-main-alpha) * 85% + 14%)), transparent);
+  border-color: rgba(255, 255, 255, min(1, calc(var(--glass-main-border-alpha) + 0.14)));
+}
+
+/* Tinted Liquid Glass for Save, Load & Reset Buttons */
+body.liquid-glass :is(.slot-action-btn, .reset-button) {
+  --btn-glass-tint: var(--glass-button-surface);
+  background:
+    var(--glass-gloss-sheen),
+    color-mix(in srgb, var(--btn-glass-tint) calc(var(--glass-main-alpha) * 95%), transparent);
+  border-color: color-mix(in srgb, var(--btn-glass-tint) 60%, rgba(255, 255, 255, var(--glass-main-border-alpha)));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.35)),
+    0 0 var(--glass-main-border-blur) color-mix(in srgb, var(--btn-glass-tint) calc(var(--glass-main-border-alpha) * 85%), transparent);
+}
+
+body.liquid-glass :is(.slot-action-btn, .reset-button):hover:not(:disabled) {
+  background:
+    var(--glass-gloss-sheen),
+    color-mix(in srgb, var(--btn-glass-tint) min(100%, calc(var(--glass-main-alpha) * 95% + 16%)), transparent);
+  border-color: color-mix(in srgb, var(--btn-glass-tint) 75%, rgba(255, 255, 255, min(1, calc(var(--glass-main-border-alpha) + 0.16))));
+}
+
+body.liquid-glass .slot-action-btn.save {
+  --btn-glass-tint: #287243;
+}
+
+body.liquid-glass .slot-action-btn.load {
+  --btn-glass-tint: #2b5488;
+}
+
+body.liquid-glass .reset-button {
+  --btn-glass-tint: #b84b4b;
+}
+
+body.liquid-glass .slot-action-btn.io {
+  --btn-glass-tint: #475569;
+}
+
+/* Popup Windows & Save/Load Menus */
+body.liquid-glass .unit-popup,
+body.liquid-glass .pool-modal,
+body.liquid-glass .quick-sac-modal,
+body.liquid-glass .quick-sac-confirm-modal,
+body.liquid-glass .options-modal,
+body.liquid-glass .slot-dropdown-menu {
+  background: var(--glass-gloss-sheen), var(--glass-popup-fill);
+  backdrop-filter: var(--glass-popup-backdrop);
+  -webkit-backdrop-filter: var(--glass-popup-backdrop);
+  border-color: rgba(255, 255, 255, var(--glass-popup-border-alpha));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-gloss) * 0.45)),
+    0 0 var(--glass-popup-border-blur) rgba(255, 255, 255, calc(var(--glass-popup-border-alpha) * 0.65)),
+    0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* Rarity-Highlighted Unit Details Popups */
+body.liquid-glass .unit-popup:is(.common, .uncommon, .rare, .epic, .legendary, .mythic) {
+  border: 2px solid color-mix(in srgb, var(--glass-border-color) calc(var(--glass-unit-border-alpha) * 100%), transparent) !important;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--glass-border-color) calc(var(--glass-gloss) * 50%), transparent),
+    0 0 var(--glass-unit-border-blur) color-mix(in srgb, var(--glass-border-color) calc(var(--glass-unit-border-alpha) * 75%), transparent),
+    0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* Modal Backdrops */
+body.liquid-glass .unit-popup-overlay,
+body.liquid-glass .pool-modal-overlay {
+  background: transparent;
+  isolation: isolate;
+}
+
+body.liquid-glass .unit-popup-overlay::before,
+body.liquid-glass .pool-modal-overlay::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(6, 10, 18, var(--glass-bg-alpha));
+  backdrop-filter: blur(var(--glass-bg-blur));
+  -webkit-backdrop-filter: blur(var(--glass-bg-blur));
+}
+
+/* Expanded Full-Screen Panels (Instant Hide for Background UI) */
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) > * {
+  visibility: hidden !important;
+  transition: none !important;
+}
+
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) .preset-collapsible,
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) button {
+  transition: none !important;
+}
+
+body.liquid-glass .inventory-panel.expanded,
+body.liquid-glass .tech-tree-panel.expanded,
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) .unit-popup-overlay,
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) .pool-modal-overlay,
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) #options-modal-overlay,
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) .quick-sac-modal,
+body.liquid-glass:has(.inventory-panel.expanded, .tech-tree-panel.expanded) .quick-sac-confirm-modal {
+  visibility: visible !important;
+}
+
+body.liquid-glass .inventory-panel.expanded,
+body.liquid-glass .tech-tree-panel.expanded {
+  background: var(--glass-gloss-sheen), var(--glass-popup-fill) !important;
+  backdrop-filter: var(--glass-popup-backdrop) !important;
+  -webkit-backdrop-filter: var(--glass-popup-backdrop) !important;
+}
+
+body.liquid-glass.glass-no-main-blur .title-bar,
+body.liquid-glass.glass-no-main-blur .panel,
+body.liquid-glass.glass-no-main-blur .stat,
+body.liquid-glass.glass-no-main-blur .top-bar,
+body.liquid-glass.glass-no-main-blur .tech-node {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.liquid-glass.glass-no-popup-blur .unit-popup,
+body.liquid-glass.glass-no-popup-blur .pool-modal,
+body.liquid-glass.glass-no-popup-blur .quick-sac-modal,
+body.liquid-glass.glass-no-popup-blur .quick-sac-confirm-modal,
+body.liquid-glass.glass-no-popup-blur .options-modal,
+body.liquid-glass.glass-no-popup-blur .slot-dropdown-menu,
+body.liquid-glass.glass-no-popup-blur .inventory-panel.expanded,
+body.liquid-glass.glass-no-popup-blur .tech-tree-panel.expanded {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.enemy-card,
+.unit-card-compact {
+  contain: content;
+}

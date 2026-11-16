@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Turret Defense</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="overhaul.css" />
 
     <script src="units.js" defer></script>
     <script src="pool.js" defer></script>
@@ -28,6 +29,14 @@
           <span id="active-save-display" class="save-slot-display"
             >Save: Slot 1</span
           >
+          <button
+            id="global-save-io-btn"
+            class="slot-action-btn io"
+            type="button"
+            title="Import or Export all save slots"
+          >
+            Import / Export
+          </button>
 
           <!-- Save Menu Dropdown -->
           <div class="slot-dropdown-container">
@@ -97,10 +106,10 @@
             </div>
           </div>
 
-          <button id="reset-storage-button" class="reset-button" type="button">
+          <button id="reset-storage-button" class="slot-action-btn reset-button" type="button">
             Reset Save
           </button>
-          <button id="options-menu-btn" type="button" class="action-button">
+          <button id="options-menu-btn" type="button" class="slot-action-btn">
             ⚙️ Options
           </button>
         </div>
@@ -163,7 +172,10 @@
             </label>
 
             <label class="option-row">
-              <input type="checkbox" id="toggle-show-effective-damage-checkbox" />
+              <input
+                type="checkbox"
+                id="toggle-show-effective-damage-checkbox"
+              />
               <span>Show Effective Damage &amp; Level Slider</span>
             </label>
 
@@ -180,9 +192,27 @@
             <div class="option-segmented-row">
               <span>Tower Build Animation</span>
               <div class="segmented-control" id="build-anim-segmented">
-                <button type="button" class="segmented-btn active" data-build-anim="full">Full</button>
-                <button type="button" class="segmented-btn" data-build-anim="short">Short</button>
-                <button type="button" class="segmented-btn" data-build-anim="off">Off</button>
+                <button
+                  type="button"
+                  class="segmented-btn active"
+                  data-build-anim="full"
+                >
+                  Full
+                </button>
+                <button
+                  type="button"
+                  class="segmented-btn"
+                  data-build-anim="short"
+                >
+                  Short
+                </button>
+                <button
+                  type="button"
+                  class="segmented-btn"
+                  data-build-anim="off"
+                >
+                  Off
+                </button>
               </div>
             </div>
 
@@ -195,6 +225,315 @@
               <input type="checkbox" id="toggle-unpin-topbar-checkbox" />
               <span>Unpin Top Bar</span>
             </label>
+
+            <label class="option-row">
+              <input type="checkbox" id="toggle-overhaul-checkbox" />
+              <span>Overhaul UI</span>
+            </label>
+
+            <div class="option-row glass-toggle-row">
+              <label class="glass-toggle-label">
+                <input type="checkbox" id="liquid-glass-checkbox" />
+                <span>Liquid Glass UI</span>
+              </label>
+              <div style="display: flex; align-items: center; gap: 6px">
+                <button type="button" id="glass-io-btn" class="glass-reset-btn">
+                  Import / Export
+                </button>
+                <button
+                  type="button"
+                  id="bg-import-export-btn"
+                  class="glass-reset-btn"
+                >
+                  BG Import / Export
+                </button>
+                <input
+                  type="file"
+                  id="import-bg-file"
+                  accept="image/*"
+                  hidden
+                />
+                <button
+                  type="button"
+                  id="reset-liquid-glass-btn"
+                  class="glass-reset-btn"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div id="liquid-glass-sliders" class="liquid-glass-sliders" hidden>
+              <!-- Row 0: Custom Background -->
+              <div class="option-slider-row">
+                <span>Image Blur</span>
+                <input
+                  type="range"
+                  id="glass-custom-bg-blur-slider"
+                  min="0"
+                  max="30"
+                  value="0"
+                />
+                <span class="glass-slider-badge" id="glass-custom-bg-blur-value"
+                  >0px</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Custom BG</span>
+                <div class="glass-bg-actions">
+                  <input
+                    type="file"
+                    id="glass-custom-bg-input"
+                    accept="image/*"
+                    hidden
+                  />
+                  <label for="glass-custom-bg-input" class="glass-bg-btn"
+                    >Upload</label
+                  >
+                  <button
+                    type="button"
+                    id="glass-custom-bg-clear"
+                    class="glass-bg-btn"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <!-- Row 1: 1st-Level Panels, Cards & Stats -->
+              <div class="option-slider-row">
+                <span>Main Opacity</span>
+                <input
+                  type="range"
+                  id="glass-main-opacity-slider"
+                  min="0"
+                  max="100"
+                  value="25"
+                />
+                <span class="glass-slider-badge" id="glass-main-opacity-value"
+                  >25%</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Main Blur</span>
+                <input
+                  type="range"
+                  id="glass-main-blur-slider"
+                  min="0"
+                  max="30"
+                  value="8"
+                />
+                <span class="glass-slider-badge" id="glass-main-blur-value"
+                  >8px</span
+                >
+              </div>
+
+              <!-- Row 2: Popups, Menus & Expanded Panels -->
+              <div class="option-slider-row">
+                <span>Popup Opacity</span>
+                <input
+                  type="range"
+                  id="glass-popup-opacity-slider"
+                  min="0"
+                  max="100"
+                  value="35"
+                />
+                <span class="glass-slider-badge" id="glass-popup-opacity-value"
+                  >35%</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Popup Blur</span>
+                <input
+                  type="range"
+                  id="glass-popup-blur-slider"
+                  min="0"
+                  max="30"
+                  value="12"
+                />
+                <span class="glass-slider-badge" id="glass-popup-blur-value"
+                  >12px</span
+                >
+              </div>
+
+              <!-- Row 3: Modal Backdrop -->
+              <div class="option-slider-row">
+                <span>Backdrop Dim</span>
+                <input
+                  type="range"
+                  id="glass-bg-opacity-slider"
+                  min="0"
+                  max="100"
+                  value="30"
+                />
+                <span class="glass-slider-badge" id="glass-bg-opacity-value"
+                  >30%</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Backdrop Blur</span>
+                <input
+                  type="range"
+                  id="glass-bg-blur-slider"
+                  min="0"
+                  max="30"
+                  value="0"
+                />
+                <span class="glass-slider-badge" id="glass-bg-blur-value"
+                  >0px</span
+                >
+              </div>
+
+              <!-- Row 4: Main Borders -->
+              <div class="option-slider-row">
+                <span>Main Border</span>
+                <input
+                  type="range"
+                  id="glass-main-border-opacity-slider"
+                  min="0"
+                  max="100"
+                  value="20"
+                />
+                <span
+                  class="glass-slider-badge"
+                  id="glass-main-border-opacity-value"
+                  >20%</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Main Glow</span>
+                <input
+                  type="range"
+                  id="glass-main-border-blur-slider"
+                  min="0"
+                  max="24"
+                  value="4"
+                />
+                <span
+                  class="glass-slider-badge"
+                  id="glass-main-border-blur-value"
+                  >4px</span
+                >
+              </div>
+
+              <!-- Row 5: Popup Borders -->
+              <div class="option-slider-row">
+                <span>Popup Border</span>
+                <input
+                  type="range"
+                  id="glass-popup-border-opacity-slider"
+                  min="0"
+                  max="100"
+                  value="35"
+                />
+                <span
+                  class="glass-slider-badge"
+                  id="glass-popup-border-opacity-value"
+                  >35%</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Popup Glow</span>
+                <input
+                  type="range"
+                  id="glass-popup-border-blur-slider"
+                  min="0"
+                  max="24"
+                  value="8"
+                />
+                <span
+                  class="glass-slider-badge"
+                  id="glass-popup-border-blur-value"
+                  >8px</span
+                >
+              </div>
+
+              <!-- Row 6: Unit Rarity Highlights -->
+              <div class="option-slider-row">
+                <span>Unit Highlight</span>
+                <input
+                  type="range"
+                  id="glass-unit-border-opacity-slider"
+                  min="0"
+                  max="100"
+                  value="75"
+                />
+                <span
+                  class="glass-slider-badge"
+                  id="glass-unit-border-opacity-value"
+                  >75%</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Unit Glow</span>
+                <input
+                  type="range"
+                  id="glass-unit-border-blur-slider"
+                  min="0"
+                  max="24"
+                  value="8"
+                />
+                <span
+                  class="glass-slider-badge"
+                  id="glass-unit-border-blur-value"
+                  >8px</span
+                >
+              </div>
+
+              <!-- Row 7: Hue & Saturation -->
+              <div class="option-slider-row">
+                <span>Glass Hue</span>
+                <input
+                  type="range"
+                  id="glass-hue-slider"
+                  class="glass-hue-range"
+                  min="0"
+                  max="360"
+                  value="215"
+                />
+                <span class="glass-slider-badge" id="glass-hue-value"
+                  >215°</span
+                >
+              </div>
+              <div class="option-slider-row">
+                <span>Saturation</span>
+                <input
+                  type="range"
+                  id="glass-saturation-slider"
+                  min="0"
+                  max="100"
+                  value="0"
+                />
+                <span class="glass-slider-badge" id="glass-saturation-value"
+                  >0%</span
+                >
+              </div>
+
+              <!-- Row 8: Tint & Gloss -->
+              <div class="option-slider-row">
+                <span>Frost Tint</span>
+                <input
+                  type="range"
+                  id="glass-tint-slider"
+                  min="0"
+                  max="100"
+                  value="0"
+                />
+                <span class="glass-slider-badge" id="glass-tint-value">0%</span>
+              </div>
+              <div class="option-slider-row">
+                <span>Gloss Sheen</span>
+                <input
+                  type="range"
+                  id="glass-gloss-slider"
+                  min="0"
+                  max="100"
+                  value="50"
+                />
+                <span class="glass-slider-badge" id="glass-gloss-value"
+                  >50%</span
+                >
+              </div>
+            </div>
           </div>
         </div>
 
@@ -222,10 +561,7 @@
           <span>Stage · Wave</span><strong id="wave">1-1 · 0</strong>
         </div>
         <div class="stat">
-          <span>Damage Level</span><strong id="damage-level">1</strong>
-        </div>
-        <div class="stat">
-          <span>Deployed Units</span><strong id="active-slots">0 / 3</strong>
+          <span>Deployed Units</span><strong id="active-slots">0 / 5</strong>
         </div>
       </div>
     </header>

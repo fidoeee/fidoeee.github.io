@@ -183,7 +183,7 @@ function loadWave(waveNumber) {
       maxHealth: health,
       speed: baseData.speed,
       reward: baseData.reward,
-      damage: Math.max(1, Math.round(baseData.damage * statMultiplier)),
+      damage: Math.max(1, Math.round(baseData.damage)),
       location: 0,
       armor: armor,
       healAmount: Math.round((baseData.healAmount ?? 0) * statMultiplier),
@@ -465,6 +465,13 @@ function renderEnemyList() {
     const card = document.createElement("div");
     card.className = "enemy-card";
 
+    const rawCurHp = Math.max(0, Math.round(enemy.health));
+    const rawMaxHp = Math.round(enemy.maxHealth);
+    const rawArmor = Math.round(enemy.armor ?? 0);
+
+    // Full exact numbers on hover
+    card.title = `${enemy.name} (Lv.${enemy.level}) — HP: ${rawCurHp.toLocaleString()} / ${rawMaxHp.toLocaleString()} | Armor: ${rawArmor.toLocaleString()}`;
+
     const inRange =
       rangeUnit !== null &&
       Math.abs(enemy.location - rangeUnit.location) <= rangeUnit.range;
@@ -478,8 +485,7 @@ function renderEnemyList() {
     name.textContent = `${enemy.name} Lv.${enemy.level}`;
 
     const hp = document.createElement("span");
-    const armorBadge = enemy.armor > 0 ? ` | 🛡️ ${enemy.armor}` : "";
-    hp.textContent = `${Math.max(0, enemy.health.toFixed(0))} / ${enemy.maxHealth.toFixed(0)} HP${armorBadge}`;
+    hp.textContent = `${formatCombatNumber(rawCurHp)} / ${formatCombatNumber(rawMaxHp)} HP`;
 
     heading.append(name, hp);
 
@@ -487,13 +493,13 @@ function renderEnemyList() {
     details.className = "enemy-details";
 
     const position = document.createElement("span");
-    position.textContent = `Position: ${enemy.location.toFixed(1)} / ${laneEnd}`;
+    position.textContent = `Pos: ${enemy.location.toFixed(1)}/${laneEnd}`;
 
     const speed = document.createElement("span");
     speed.textContent = `Speed: ${enemy.speed}`;
 
     const armor = document.createElement("span");
-    armor.textContent = `Armor: ${enemy.armor ?? 0}`;
+    armor.textContent = `Armor: ${formatCombatNumber(rawArmor)}`;
 
     details.append(position, speed, armor);
 
@@ -637,9 +643,6 @@ function handleGameOver() {
 
   activeUnits = [];
   enemies = [];
-
-  addLog("☠️ DEFEAT: Your base was destroyed!");
-  alert("Game Over! Your base was destroyed.");
 
   refreshBattleUI();
   if (typeof renderStageList === "function") {
@@ -817,7 +820,7 @@ function renderStatsList() {
   damageText.innerHTML = `Total Wave Damage: <strong>${totalWaveDamage.toLocaleString()}</strong>`;
 
   const countText = document.createElement("span");
-  countText.innerHTML = `Deployed: <strong>${deployed.length} / ${maxDeployedUnits + maxBaseSlots}</strong>`;
+  countText.innerHTML = `Deployed: <strong>${deployed.length} / ${getMaxDeployedUnits() + maxBaseSlots}</strong>`;
 
   summary.append(damageText, countText);
   statsList.appendChild(summary);
@@ -852,7 +855,7 @@ function renderStatsList() {
     details.className = "stat-tower-details";
 
     const waveDamageSpan = document.createElement("span");
-    waveDamageSpan.innerHTML = `Wave Dmg: <strong>${waveDmg.toLocaleString()}</strong> (${sharePercent}%)`;
+    waveDamageSpan.innerHTML = `Wave Dmg: <strong>${Math.round(waveDmg).toLocaleString()}</strong> (${sharePercent}%)`;
 
     const killsSpan = document.createElement("span");
     killsSpan.innerHTML = `Kills: <strong>${unit.waveKills || 0}</strong>`;

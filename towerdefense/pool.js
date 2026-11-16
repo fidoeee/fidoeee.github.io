@@ -105,12 +105,12 @@ const rarityRank = {
 };
 
 const rarityMultipliers = {
-  Common: 2.0,  
-  Uncommon: 1.7,   
+  Common: 2.5,  
+  Uncommon: 1.5,   
   Rare: 1.4,   
   Epic: 1.1,  
-  Legendary: 0.85, 
-  Mythic: 0.6, 
+  Legendary: 0.9, 
+  Mythic: 0.7, 
 };
 
 const MAIN_RARITY_WEIGHTS = {
@@ -142,13 +142,22 @@ const rarityXpMap = {
   Mythic: 7500,
 };
 
+const RARITY_UPGRADE_CAPS = {
+  Common: 4,
+  Uncommon: 5,
+  Rare: 6,
+  Epic: 7,
+  Legendary: 10,
+  Mythic: 12,
+};
+
 const BASE_UPGRADE_COSTS = {
   common: 30,
-  uncommon: 50,
-  rare_main: 80,
+  uncommon: 60,
+  rare_main: 90,
   rare_rear: 200,
   epic: 300,
-  legendary: 1000,
+  legendary: 800,
   mythic: 3500,
 };
 /**

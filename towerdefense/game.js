@@ -7,6 +7,18 @@ let currentSaveSlot = 1;
 const ACTIVE_SLOT_KEY = "turretDefenseActiveSlotV1";
 const PRESETS_SAVE_KEY = "turretDefensePresetsV1";
 
+const CUSTOM_ALPHABET = (() => {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-".split("");
+  let seed = 13374209;
+  for (let i = chars.length - 1; i > 0; i--) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+})();
+
 // --- Economy & Core Resources ---
 let gold = 100;
 let baseHealth = 100;
@@ -23,6 +35,7 @@ const maxBaseHealth = 100;
 const baseCost = 200; //Base upgrade cost
 const perLevelSacMultiplier = 0.25;
 const MAX_CLEARS_FOR_REWARDS = 5;
+const MAX_INVENTORY_CAP = 1000;
 
 // --- Wave & Slot Configurations ---
 let wave = 0;
@@ -40,6 +53,13 @@ let isLoading = false;
 let currentTechPanelTab = "techTree";
 let isTowerStatsExpanded = false;
 let savedTowerStatsScrollTop = 0;
+let saveDebounceTimer = null;
+let saveMaxWaitTimer = null;
+let pendingSaveSlot = null;
+let noticeToastTimeout = null;
+let glassSliderRafId = null;
+const SAVE_DEBOUNCE_MS = 1000; // Wait 1s after spam-clicking stops
+const SAVE_MAX_WAIT_MS = 5000; // Force a save at least every 5s during continuous spam
 
 // --- Build Pool & Shop State ---
 const FOCUS_TOWER_MULTIPLIER = 10;
@@ -97,10 +117,34 @@ let swapDeploymentLayout = false;
 let simplifyBattleLog = false;
 let hideMaxedTech = false;
 let unpinTopBar = false;
+let liquidGlassMode = false;
 let showMoreStats = false;
 let showTechBonus = false;
 let showEffectiveDamage = false;
 let buildAnimationMode = "full"; // "full" | "short" | "off"
+let uiOverhaulMode = true;
+
+const DEFAULT_LIQUID_GLASS_SETTINGS = {
+  mainOpacity: 25,
+  mainBlur: 8,
+  unitBorderOpacity: 75,
+  unitBorderBlur: 8,
+  popupOpacity: 35,
+  popupBlur: 12,
+  bgOpacity: 30,
+  bgBlur: 0,
+  mainBorderOpacity: 20,
+  mainBorderBlur: 4,
+  popupBorderOpacity: 35,
+  popupBorderBlur: 8,
+  hue: 215,
+  saturation: 0,
+  tint: 0,
+  gloss: 50,
+  customBg: "",
+  customBgBlur: 0,
+};
+let liquidGlassSettings = { ...DEFAULT_LIQUID_GLASS_SETTINGS };
 
 // --- Inventory & UI Display Filters ---
 let inventoryFilter = "all"; // "all", "Main", "Rear"
@@ -113,7 +157,18 @@ let upgradeMenuSortOrder = "desc";
 let boostMenuSortMode = "level";
 let boostMenuSortOrder = "desc";
 let boostMenuCategoryFilter = "all"; // "all" | "Main" | "Rear"
-let energyMode = "hide";
+const DEFAULT_INVENTORY_SETTINGS = {
+  showNewHighlight: true,
+  showEnergy: false,
+  showPresets: false,
+  presetsAtTop: false,
+  showDeployedTowers: false,
+};
+
+let inventorySettings = { ...DEFAULT_INVENTORY_SETTINGS };
+const newTowerTypes = new Set();
+const pendingClearNewTowerTypes = new Set();
+const discoveredTowerTypes = new Set();
 
 const QUICK_SAC_RARITIES = [
   "Common",
@@ -162,7 +217,6 @@ const baseHealthDisplay = document.getElementById("base-health");
 const waveDisplay = document.getElementById("wave");
 const activeSlotsDisplay = document.getElementById("active-slots");
 const stDisplay = document.getElementById("st");
-const damageLevelDisplay = document.getElementById("damage-level");
 
 // Containers & Layout Grids
 const inventoryList = document.getElementById("inventory-list");
@@ -206,6 +260,7 @@ const saveMenuBtn = document.getElementById("save-menu-btn");
 const loadMenuBtn = document.getElementById("load-menu-btn");
 const saveMenu = document.getElementById("save-menu");
 const loadMenu = document.getElementById("load-menu");
+const importExportBtn = document.getElementById("global-save-io-btn")
 
 // Options Modal Elements
 const optionsModalOverlay = document.getElementById("options-modal-overlay");
@@ -214,10 +269,28 @@ const closeOptionsBtn = document.getElementById("close-options-btn");
 const saveOptionsBtn = document.getElementById("save-options-btn");
 const showStatsCb = document.getElementById("toggle-show-more-stats-checkbox");
 const showTechCb = document.getElementById("toggle-show-tech-bonus-checkbox");
+const liquidGlassCheckbox = document.getElementById("liquid-glass-checkbox");
+const bgImportExportBtn = document.getElementById("bg-import-export-btn");
 
 /* ==========================================================================
    3. SAVE / LOAD & LOCAL STORAGE MANAGEMENT
    ========================================================================== */
+
+function touchLastPlayedTimestamp() {
+  flushPendingSave();
+  try {
+    const slotKey = getSaveKey(currentSaveSlot);
+    const raw = localStorage.getItem(slotKey);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    parsed.lastPlayedAt = now;
+    parsed.timestamp = now;
+    localStorage.setItem(slotKey, JSON.stringify(parsed));
+  } catch (err) {
+    // Ignore storage quota or parse errors on unload
+  }
+}
 
 function getSaveKey(slot = currentSaveSlot) {
   return `turretDefenseCampaignV1_slot_${slot}`;
@@ -250,7 +323,190 @@ function closeSaveLoadMenus() {
   loadMenu?.classList.add("hidden");
 }
 
-function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
+function cancelPendingSave() {
+  clearTimeout(saveDebounceTimer);
+  clearTimeout(saveMaxWaitTimer);
+  saveDebounceTimer = null;
+  saveMaxWaitTimer = null;
+  pendingSaveSlot = null;
+}
+
+function flushPendingSave() {
+  if (pendingSaveSlot === null) return;
+  const slotToSave = pendingSaveSlot;
+  cancelPendingSave();
+  writeCampaignToStorage(slotToSave, false);
+}
+
+function computeSaveChecksum(str) {
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).padStart(7, "0");
+}
+
+function encodeCustomSave(jsonString) {
+  const bytes = new TextEncoder().encode(jsonString);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b1 = bytes[i];
+    const b2 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const b3 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+
+    out += CUSTOM_ALPHABET[b1 >> 2];
+    out += CUSTOM_ALPHABET[((b1 & 3) << 4) | (b2 >> 4)];
+    out +=
+      i + 1 < bytes.length
+        ? CUSTOM_ALPHABET[((b2 & 15) << 2) | (b3 >> 6)]
+        : "";
+    out += i + 2 < bytes.length ? CUSTOM_ALPHABET[b3 & 63] : "";
+  }
+  return `TD1.${out}.${computeSaveChecksum(out)}`;
+}
+
+function decodeCustomSave(rawString) {
+  const trimmed = rawString.trim();
+  if (!trimmed.startsWith("TD1.")) throw new Error("Invalid save prefix");
+
+  const parts = trimmed.split(".");
+  if (parts.length !== 3) throw new Error("Corrupted save structure");
+
+  const [, body, checksum] = parts;
+  if (computeSaveChecksum(body) !== checksum) {
+    throw new Error("Save code was modified or corrupted");
+  }
+
+  const bytes = [];
+  for (let i = 0; i < body.length; i += 4) {
+    const c1 = CUSTOM_ALPHABET.indexOf(body[i]);
+    const c2 = CUSTOM_ALPHABET.indexOf(body[i + 1]);
+    const c3 = i + 2 < body.length ? CUSTOM_ALPHABET.indexOf(body[i + 2]) : -1;
+    const c4 = i + 3 < body.length ? CUSTOM_ALPHABET.indexOf(body[i + 3]) : -1;
+
+    if (
+      c1 < 0 ||
+      c2 < 0 ||
+      (i + 2 < body.length && c3 < 0) ||
+      (i + 3 < body.length && c4 < 0)
+    ) {
+      throw new Error("Invalid character in save");
+    }
+
+    bytes.push((c1 << 2) | (c2 >> 4));
+    if (c3 >= 0) bytes.push(((c2 & 15) << 4) | (c3 >> 2));
+    if (c4 >= 0) bytes.push(((c3 & 3) << 6) | c4);
+  }
+
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+function exportGlobalSaveData() {
+  flushPendingSave();
+  const payload = {
+    version: 1,
+    activeSlot: getStoredActiveSlot(),
+    slots: {},
+    presets: {},
+  };
+
+  for (let slot = 1; slot <= 3; slot++) {
+    const rawSave = localStorage.getItem(getSaveKey(slot));
+    const rawPreset = localStorage.getItem(getPresetKey(slot));
+    if (rawSave) payload.slots[slot] = JSON.parse(rawSave);
+    if (rawPreset) payload.presets[slot] = JSON.parse(rawPreset);
+  }
+
+  return encodeCustomSave(JSON.stringify(payload));
+}
+
+function importGlobalSaveData(rawString) {
+  const jsonString = decodeCustomSave(rawString);
+  const parsed = JSON.parse(jsonString);
+  if (!parsed || typeof parsed !== "object" || !parsed.slots) {
+    throw new Error("Invalid save format");
+  }
+
+  cancelPendingSave();
+
+  for (let slot = 1; slot <= 3; slot++) {
+    if (parsed.slots[slot]) {
+      localStorage.setItem(getSaveKey(slot), JSON.stringify(parsed.slots[slot]));
+    } else {
+      localStorage.removeItem(getSaveKey(slot));
+    }
+
+    if (parsed.presets?.[slot]) {
+      localStorage.setItem(
+        getPresetKey(slot),
+        JSON.stringify(parsed.presets[slot]),
+      );
+    } else {
+      localStorage.removeItem(getPresetKey(slot));
+    }
+  }
+
+  const targetSlot = Number(parsed.activeSlot) || 1;
+  setActiveSaveSlot(targetSlot);
+  location.reload();
+}
+
+function serializeUnit(unit) {
+  if (!unit) return null;
+
+  const compact = {
+    id: unit.id,
+    type: unit.type,
+  };
+
+  if (unit.level > 1) compact.level = unit.level;
+  if (unit.xp > 0) compact.xp = unit.xp;
+  if ((unit.energy ?? 100) < 100) compact.energy = unit.energy;
+  if (unit.upgradeCount > 0) compact.upgradeCount = unit.upgradeCount;
+  if (unit.totalDamage > 0) compact.totalDamage = Math.round(unit.totalDamage);
+  if (unit.totalKills > 0) compact.totalKills = unit.totalKills;
+  if (unit.isLocked) compact.isLocked = true;
+  if (unit.targeting) compact.targeting = unit.targeting;
+
+  if (
+    unit.upgradeBonuses &&
+    (unit.upgradeBonuses.damage > 0 ||
+      unit.upgradeBonuses.fireRate > 0 ||
+      unit.upgradeBonuses.range > 0 ||
+      (unit.upgradeBonuses.armorPen || 0) > 0)
+  ) {
+    compact.upgradeBonuses = { ...unit.upgradeBonuses };
+  }
+
+  return compact;
+}
+
+function saveCampaignProgress(
+  slot = currentSaveSlot,
+  showLog = false,
+  immediate = false,
+) {
+  if (isLoading) return;
+
+  // Manual slot saves (showLog = true) or explicit immediate saves write right away
+  if (immediate || showLog) {
+    cancelPendingSave();
+    writeCampaignToStorage(slot, showLog);
+    return;
+  }
+
+  pendingSaveSlot = slot;
+
+  clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
+
+  if (!saveMaxWaitTimer) {
+    saveMaxWaitTimer = setTimeout(flushPendingSave, SAVE_MAX_WAIT_MS);
+  }
+}
+
+function writeCampaignToStorage(slot = currentSaveSlot, showLog = false) {
   if (isLoading) return;
 
   try {
@@ -273,9 +529,9 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       startWaveAvailable: stageEntered ? true : startWaveAvailable,
       gold,
       baseHealth,
-      inventory,
-      deployedUnits,
-      deployedBaseUnits,
+      inventory: inventory.map(serializeUnit),
+      deployedUnits: deployedUnits.map(serializeUnit),
+      deployedBaseUnits: deployedBaseUnits.map(serializeUnit),
       deploymentPresets,
       nextUnitId,
       st,
@@ -292,6 +548,9 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       simplifyBattleLog,
       hideMaxedTech,
       unpinTopBar,
+      liquidGlassMode,
+      liquidGlassSettings,
+      lastPlayedAt: Date.now(),
       showMoreStats,
       showTechBonus,
       showEffectiveDamage,
@@ -305,14 +564,16 @@ function saveCampaignProgress(slot = currentSaveSlot, showLog = false) {
       inventorySort,
       inventorySortAsc,
       currentInventoryTab,
-      energyMode,
+      inventorySettings,
+      newTowerTypes: [...newTowerTypes],
+      discoveredTowerTypes: [...discoveredTowerTypes],
       quickSacSettings,
     };
 
     localStorage.setItem(getSaveKey(slot), JSON.stringify(saveData));
 
     if (showLog) {
-      addLog(`💾 Saved progress to Slot ${slot}.`);
+      showToast(`💾 Saved progress to Slot ${slot}.`, "success", 2500);
     }
   } catch (error) {
     console.warn("Game progress could not be saved.", error);
@@ -327,11 +588,13 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     const saved = JSON.parse(localStorage.getItem(key) || "null");
 
     if (!saved) {
-      addLog(`Slot ${slot} is empty.`);
+      showToast(`Slot ${slot} is empty.`, "warning", 2500);
       return false;
     }
 
     currentSaveSlot = slot;
+
+    const lastSeenTimestamp = saved.lastPlayedAt ?? saved.savedAt ?? Date.now();
 
     // Restore Settings & Options
     showClearPopup = saved.showClearPopup ?? false;
@@ -341,6 +604,42 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     simplifyBattleLog = saved.simplifyBattleLog ?? false;
     hideMaxedTech = saved.hideMaxedTech ?? false;
     unpinTopBar = saved.unpinTopBar ?? false;
+    liquidGlassMode = saved.liquidGlassMode ?? false;
+    liquidGlassSettings = {
+      ...DEFAULT_LIQUID_GLASS_SETTINGS,
+      ...(saved.liquidGlassSettings || {}),
+    };
+    if (
+      saved.liquidGlassSettings &&
+      Number(saved.liquidGlassSettings.saturation) > 100
+    ) {
+      liquidGlassSettings.saturation = 0;
+    }
+    if (!saved.liquidGlassSettings && Number.isFinite(saved.liquidGlassFrost)) {
+      liquidGlassSettings.mainOpacity = saved.liquidGlassFrost;
+      liquidGlassSettings.bgOpacity = saved.liquidBgFrost ?? 30;
+    }
+    if (saved.liquidGlassSettings) {
+      if (
+        saved.liquidGlassSettings.mainBorderOpacity === undefined &&
+        Number.isFinite(saved.liquidGlassSettings.borderOpacity)
+      ) {
+        liquidGlassSettings.mainBorderOpacity =
+          saved.liquidGlassSettings.borderOpacity;
+        liquidGlassSettings.popupBorderOpacity =
+          saved.liquidGlassSettings.borderOpacity;
+      }
+      if (
+        saved.liquidGlassSettings.mainBorderBlur === undefined &&
+        Number.isFinite(saved.liquidGlassSettings.borderBlur)
+      ) {
+        liquidGlassSettings.mainBorderBlur =
+          saved.liquidGlassSettings.borderBlur;
+        liquidGlassSettings.popupBorderBlur =
+          saved.liquidGlassSettings.borderBlur;
+      }
+    }
+    applyLiquidGlassMode(liquidGlassMode, liquidGlassSettings);
     showMoreStats = saved.showMoreStats ?? false;
     showTechBonus = saved.showTechBonus ?? false;
     showEffectiveDamage = saved.showEffectiveDamage ?? false;
@@ -349,9 +648,6 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     )
       ? saved.buildAnimationMode
       : "full";
-
-    syncOptionCheckboxes();
-    setUnpinTopBar(unpinTopBar);
 
     syncOptionCheckboxes();
     setUnpinTopBar(unpinTopBar);
@@ -384,9 +680,46 @@ function loadCampaignProgress(slot = currentSaveSlot) {
 
     if (hideTechCb) hideTechCb.checked = hideMaxedTech;
 
-    setUnpinTopBar(unpinTopBar);
+    inventorySettings = { ...DEFAULT_INVENTORY_SETTINGS };
+    if (
+      saved.inventorySettings &&
+      typeof saved.inventorySettings === "object"
+    ) {
+      inventorySettings.showNewHighlight =
+        saved.inventorySettings.showNewHighlight !== undefined
+          ? Boolean(saved.inventorySettings.showNewHighlight)
+          : true;
+      inventorySettings.showEnergy = Boolean(
+        saved.inventorySettings.showEnergy,
+      );
+      inventorySettings.showPresets = Boolean(
+        saved.inventorySettings.showPresets,
+      );
+      inventorySettings.presetsAtTop = Boolean(
+        saved.inventorySettings.presetsAtTop,
+      );
+      inventorySettings.showDeployedTowers = Boolean(
+        saved.inventorySettings.showDeployedTowers,
+      );
+    } else if (saved.energyMode && saved.energyMode !== "hide") {
+      inventorySettings.showEnergy = true;
+    }
 
-    if (saved.energyMode) energyMode = saved.energyMode;
+    newTowerTypes.clear();
+    pendingClearNewTowerTypes.clear();
+    discoveredTowerTypes.clear();
+
+    if (Array.isArray(saved.discoveredTowerTypes)) {
+      saved.discoveredTowerTypes.forEach((t) => discoveredTowerTypes.add(t));
+    }
+    // Seed from existing owned towers so older saves don't mark old towers as new
+    [...inventory, ...deployedUnits, ...deployedBaseUnits].forEach((u) => {
+      if (u && u.type) discoveredTowerTypes.add(u.type);
+    });
+
+    if (Array.isArray(saved.newTowerTypes)) {
+      saved.newTowerTypes.forEach((t) => newTowerTypes.add(t));
+    }
 
     quickSacSettings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SAC_SETTINGS));
     if (saved.quickSacSettings && typeof saved.quickSacSettings === "object") {
@@ -622,7 +955,7 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     renderStageSelect();
     if (typeof renderTechTree === "function") renderTechTree();
 
-    addLog(`📂 Loaded save slot ${slot}.`);
+    showToast(`📂 Loaded save slot ${slot}.`, "success", 2500);
     return true;
   } catch (error) {
     console.warn(`Failed to load save slot ${slot}:`, error);
@@ -632,16 +965,19 @@ function loadCampaignProgress(slot = currentSaveSlot) {
   }
 }
 
-function handleSaveToSlot(slot) {
+async function handleSaveToSlot(slot) {
   if (stageEntered || isBattleRunning()) {
-    addLog("Cannot save while inside an active battle.");
+    showToast("Cannot save while inside an active battle.", "warning", 2500);
     return;
   }
 
-  // Add confirmation prompt
-  const confirmed = confirm(
-    `Are you sure you want to overwrite Save Slot ${slot}?`,
-  );
+  const confirmed = await showGameModal({
+    title: "Overwrite Save?",
+    message: `Are you sure you want to overwrite Save Slot ${slot}?`,
+    type: "warning",
+    confirmText: "Overwrite",
+    cancelText: "Cancel",
+  });
   if (!confirmed) return;
 
   saveCampaignProgress(slot, true);
@@ -649,9 +985,13 @@ function handleSaveToSlot(slot) {
   closeSaveLoadMenus();
 }
 
-function handleLoadFromSlot(slot) {
+async function handleLoadFromSlot(slot) {
   if (stageEntered || isBattleRunning()) {
-    addLog("Cannot switch save slots while inside a world.");
+    showToast(
+      "Cannot switch save slots while inside a world.",
+      "warning",
+      2500,
+    );
     return;
   }
 
@@ -679,21 +1019,29 @@ function handleLoadFromSlot(slot) {
       deployedBaseUnits.fill(null);
       deploymentPresets = [null, null, null];
       quickSacSettings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SAC_SETTINGS));
+      inventorySettings = { ...DEFAULT_INVENTORY_SETTINGS };
+      newTowerTypes.clear();
+      pendingClearNewTowerTypes.clear();
+      discoveredTowerTypes.clear();
 
       saveCampaignProgress(slot);
       updateUI();
       renderInventory();
       renderDeployment();
       renderStageSelect();
-      addLog(`Created new game save in Slot ${slot}.`);
+      showToast(`Created new game save in Slot ${slot}.`, "success", 2500);
     }
     closeSaveLoadMenus();
     return;
   }
 
-  const confirmed = confirm(
-    `Load Save Slot ${slot}? Unsaved changes in current session will be lost.`,
-  );
+  const confirmed = await showGameModal({
+    title: "Load Save Slot?",
+    message: `Load Save Slot ${slot}? Unsaved changes in current session will be lost.`,
+    type: "warning",
+    confirmText: "Load Save",
+    cancelText: "Cancel",
+  });
   if (!confirmed) return;
 
   const success = loadCampaignProgress(slot);
@@ -731,7 +1079,7 @@ function savePreset(index) {
   }
 
   saveCampaignProgress(currentSaveSlot);
-  addLog(`💾 Saved Deployment Preset ${index + 1}!`);
+  showToast(`💾 Saved Deployment Preset ${index + 1}!`, "success", 2500);
 
   renderDeployment();
 }
@@ -739,6 +1087,695 @@ function savePreset(index) {
 /* ==========================================================================
    4. HELPER & UTILITY FUNCTIONS
    ========================================================================== */
+
+function getMaxUpgrades(unit) {
+  if (!unit) return Infinity;
+  const rarity = unit.rarity || getUnitData(unit)?.rarity || "Common";
+  const cap =
+    typeof RARITY_UPGRADE_CAPS !== "undefined"
+      ? RARITY_UPGRADE_CAPS[rarity]
+      : undefined;
+  return Number.isFinite(cap) ? cap : Infinity;
+}
+
+function isMaxUpgraded(unit) {
+  if (!unit) return false;
+  return (unit.upgradeCount ?? 0) >= getMaxUpgrades(unit);
+}
+
+function setUiOverhaulMode(enabled) {
+  uiOverhaulMode = Boolean(enabled);
+  document.body.classList.toggle("ui-overhaul", uiOverhaulMode);
+}
+
+function isValidCustomBgDataUrl(str) {
+  return (
+    typeof str === "string" &&
+    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[A-Za-z0-9+/=]+$/i.test(
+      str.trim(),
+    )
+  );
+}
+
+function formatFrostTier(val) {
+  if (val <= 30) return "Clear";
+  if (val <= 70) return "Balanced";
+  return "Frosted";
+}
+
+function compressCustomBg(
+  file,
+  maxWidth = 1920,
+  maxHeight = 1080,
+  quality = 0.82,
+) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read image"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Invalid image file"));
+      img.onload = () => {
+        let { width, height } = img;
+        const scale = Math.min(1, maxWidth / width, maxHeight / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // WebP is smaller & faster; falls back to JPEG automatically if unsupported
+        resolve(canvas.toDataURL("image/webp", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+const customBgInput = document.getElementById("glass-custom-bg-input");
+const customBgClear = document.getElementById("glass-custom-bg-clear");
+
+if (customBgInput) {
+  customBgInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const compressedDataUrl = await compressCustomBg(file);
+      liquidGlassSettings.customBg = compressedDataUrl;
+      applyLiquidGlassMode(true, liquidGlassSettings);
+      saveCampaignProgress();
+    } catch (err) {
+      console.error("Custom background error:", err);
+    } finally {
+      customBgInput.value = "";
+    }
+  });
+}
+
+if (customBgClear) {
+  customBgClear.addEventListener("click", () => {
+    liquidGlassSettings.customBg = "";
+    applyLiquidGlassMode(liquidGlassMode, liquidGlassSettings);
+    saveCampaignProgress();
+  });
+}
+
+function applyLiquidGlassMode(enabled, settings = liquidGlassSettings) {
+  liquidGlassMode = Boolean(enabled);
+  liquidGlassSettings = {
+    customBg: isValidCustomBgDataUrl(settings.customBg)
+      ? settings.customBg.trim()
+      : "",
+    customBgBlur: Math.max(0, Math.min(30, Number(settings.customBgBlur) ?? 0)),
+    mainOpacity: Math.max(0, Math.min(100, Number(settings.mainOpacity) ?? 25)),
+    mainBlur: Math.max(0, Math.min(30, Number(settings.mainBlur) ?? 8)),
+    unitBorderOpacity: Math.max(
+      0,
+      Math.min(100, Number(settings.unitBorderOpacity) ?? 75),
+    ),
+    unitBorderBlur: Math.max(
+      0,
+      Math.min(24, Number(settings.unitBorderBlur) ?? 8),
+    ),
+    popupOpacity: Math.max(
+      0,
+      Math.min(100, Number(settings.popupOpacity) ?? 35),
+    ),
+    popupBlur: Math.max(0, Math.min(30, Number(settings.popupBlur) ?? 12)),
+    bgOpacity: Math.max(0, Math.min(100, Number(settings.bgOpacity) ?? 30)),
+    bgBlur: Math.max(0, Math.min(30, Number(settings.bgBlur) ?? 0)),
+    mainBorderOpacity: Math.max(
+      0,
+      Math.min(100, Number(settings.mainBorderOpacity) ?? 20),
+    ),
+    mainBorderBlur: Math.max(
+      0,
+      Math.min(24, Number(settings.mainBorderBlur) ?? 4),
+    ),
+    popupBorderOpacity: Math.max(
+      0,
+      Math.min(100, Number(settings.popupBorderOpacity) ?? 35),
+    ),
+    popupBorderBlur: Math.max(
+      0,
+      Math.min(24, Number(settings.popupBorderBlur) ?? 8),
+    ),
+    hue: Math.max(0, Math.min(360, Number(settings.hue) ?? 215)),
+    saturation: Math.max(0, Math.min(100, Number(settings.saturation) ?? 0)),
+    tint: Math.max(0, Math.min(100, Number(settings.tint) ?? 0)),
+    gloss: Math.max(0, Math.min(100, Number(settings.gloss) ?? 50)),
+  };
+
+  const s = liquidGlassSettings;
+  document.body.classList.toggle("liquid-glass", liquidGlassMode);
+  document.body.style.setProperty(
+    "--glass-main-alpha",
+    (s.mainOpacity / 100).toFixed(2),
+  );
+  document.body.style.setProperty("--glass-main-blur", `${s.mainBlur}px`);
+  document.body.style.setProperty(
+    "--glass-unit-border-alpha",
+    (s.unitBorderOpacity / 100).toFixed(2),
+  );
+  document.body.style.setProperty(
+    "--glass-unit-border-blur",
+    `${s.unitBorderBlur}px`,
+  );
+  document.body.style.setProperty(
+    "--glass-popup-alpha",
+    (s.popupOpacity / 100).toFixed(2),
+  );
+  document.body.style.setProperty("--glass-popup-blur", `${s.popupBlur}px`);
+  document.body.style.setProperty(
+    "--glass-bg-alpha",
+    (s.bgOpacity / 100).toFixed(2),
+  );
+  document.body.style.setProperty("--glass-bg-blur", `${s.bgBlur}px`);
+  document.body.style.setProperty(
+    "--glass-main-border-alpha",
+    (s.mainBorderOpacity / 100).toFixed(2),
+  );
+  document.body.style.setProperty(
+    "--glass-main-border-blur",
+    `${s.mainBorderBlur}px`,
+  );
+  document.body.style.setProperty(
+    "--glass-popup-border-alpha",
+    (s.popupBorderOpacity / 100).toFixed(2),
+  );
+  document.body.style.setProperty(
+    "--glass-popup-border-blur",
+    `${s.popupBorderBlur}px`,
+  );
+  document.body.style.setProperty("--glass-hue", `${s.hue}deg`);
+  document.body.style.setProperty("--glass-saturation", `${s.saturation}%`);
+  document.body.style.setProperty("--glass-tint", `${s.tint}%`);
+  document.body.style.setProperty("--glass-gloss", (s.gloss / 100).toFixed(2));
+  document.body.style.setProperty(
+    "--glass-custom-bg",
+    s.customBg ? `url("${s.customBg}")` : "none",
+  );
+  document.body.style.setProperty(
+    "--glass-custom-bg-blur",
+    `${s.customBgBlur}px`,
+  );
+
+  document.body.classList.toggle(
+    "glass-no-main-blur",
+    liquidGlassMode && s.mainBlur === 0,
+  );
+  document.body.classList.toggle(
+    "glass-no-popup-blur",
+    liquidGlassMode && s.popupBlur === 0,
+  );
+
+  if (liquidGlassCheckbox) {
+    liquidGlassCheckbox.checked = liquidGlassMode;
+  }
+
+  const slidersWrap = document.getElementById("liquid-glass-sliders");
+  if (slidersWrap) {
+    slidersWrap.hidden = !liquidGlassMode;
+  }
+
+  const sliderBindings = [
+    ["glass-main-opacity", s.mainOpacity, "%"],
+    ["glass-main-blur", s.mainBlur, "px"],
+    ["glass-unit-border-opacity", s.unitBorderOpacity, "%"],
+    ["glass-unit-border-blur", s.unitBorderBlur, "px"],
+    ["glass-popup-opacity", s.popupOpacity, "%"],
+    ["glass-popup-blur", s.popupBlur, "px"],
+    ["glass-bg-opacity", s.bgOpacity, "%"],
+    ["glass-bg-blur", s.bgBlur, "px"],
+    ["glass-main-border-opacity", s.mainBorderOpacity, "%"],
+    ["glass-main-border-blur", s.mainBorderBlur, "px"],
+    ["glass-popup-border-opacity", s.popupBorderOpacity, "%"],
+    ["glass-popup-border-blur", s.popupBorderBlur, "px"],
+    ["glass-hue", s.hue, "°"],
+    ["glass-saturation", s.saturation, "%"],
+    ["glass-tint", s.tint, "%"],
+    ["glass-gloss", s.gloss, "%"],
+    ["glass-custom-bg-blur", s.customBgBlur, "px"],
+  ];
+
+  for (const [prefix, val, unit] of sliderBindings) {
+    const input = document.getElementById(`${prefix}-slider`);
+    const badge = document.getElementById(`${prefix}-value`);
+    if (input) input.value = String(val);
+    if (badge) badge.textContent = `${val}${unit}`;
+  }
+}
+
+function formatTimeAway(ms) {
+  if (!Number.isFinite(ms) || ms < 60000) return "Just now";
+
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 && days === 0) parts.push(`${minutes}m`);
+
+  return `${parts.join(" ")} ago`;
+}
+
+function openWelcomeBackModal() {
+  document.getElementById("welcome-back-overlay")?.remove();
+
+  const savedRaw = JSON.parse(
+    localStorage.getItem(getSaveKey(currentSaveSlot)) || "null",
+  );
+  const savedTime = savedRaw?.lastPlayedAt ?? savedRaw?.timestamp ?? null;
+
+  const now = new Date();
+  const formattedClock = now.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const formattedDate = now.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  const timeAwayText = savedTime
+    ? `Last active: ${formatTimeAway(Date.now() - savedTime)}`
+    : "Fresh Command Session";
+
+  const allTowers = [
+    ...inventory,
+    ...deployedUnits.filter((u) => u !== null),
+    ...deployedBaseUnits.filter((u) => u !== null),
+  ];
+  const peakLevel =
+    allTowers.length > 0 ? Math.max(...allTowers.map((u) => u.level || 1)) : 1;
+
+  const stageLabel =
+    currentCampaignTabMode === "challenge"
+      ? `Challenge ${selectedChallengeStageId}`
+      : `Stage ${selectedStageId}`;
+
+  const overlay = document.createElement("div");
+  overlay.id = "welcome-back-overlay";
+  overlay.className = "unit-popup-overlay";
+  overlay.style.zIndex = "100002";
+
+  const modal = document.createElement("div");
+  modal.className = "unit-popup";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.style.maxWidth = "440px";
+  modal.style.width = "92%";
+  modal.style.borderTop = "4px solid #3b82f6";
+
+  const header = document.createElement("div");
+  header.className = "unit-popup-header";
+  header.style.alignItems = "flex-start";
+
+  const titleWrap = document.createElement("div");
+
+  const title = document.createElement("h2");
+  title.textContent = savedTime
+    ? "👋 Welcome Back, Commander!"
+    : "🛡️ Welcome, Commander!";
+  title.style.margin = "0";
+
+  const sub = document.createElement("p");
+  sub.className = "unit-popup-subtitle";
+  sub.textContent = `${formattedDate} · ${formattedClock}  |  ${timeAwayText}`;
+  sub.style.margin = "4px 0 0 0";
+
+  titleWrap.append(title, sub);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "unit-popup-close";
+  closeBtn.textContent = "×";
+
+  header.append(titleWrap, closeBtn);
+
+  const grid = document.createElement("div");
+  grid.style.cssText = `
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 16px 0 20px 0;
+  `;
+
+  const stats = [
+    { label: "Active Save", value: `Slot ${currentSaveSlot}` },
+    { label: "Current Stage", value: stageLabel },
+    {
+      label: "Resources",
+      value: `${formatGameNumber(gold)} Gold · ${formatGameNumber(st)} ST`,
+    },
+    {
+      label: "Inventory",
+      value: `${inventory.length} / ${MAX_INVENTORY_CAP} (${allTowers.length} Total)`,
+    },
+    { label: "Highest Tower", value: `Level ${peakLevel}` },
+    { label: "Base Integrity", value: `${baseHealth} / ${maxBaseHealth} HP` },
+  ];
+
+  for (const item of stats) {
+    const card = document.createElement("div");
+    card.style.cssText = `
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px;
+      padding: 8px 12px;
+    `;
+
+    const lbl = document.createElement("div");
+    lbl.textContent = item.label;
+    lbl.style.fontSize = "0.75rem";
+    lbl.style.opacity = "0.75";
+
+    const val = document.createElement("div");
+    val.textContent = item.value;
+    val.style.fontWeight = "bold";
+    val.style.fontSize = "0.95rem";
+    val.style.marginTop = "2px";
+
+    card.append(lbl, val);
+    grid.appendChild(card);
+  }
+
+  const footer = document.createElement("div");
+  footer.style.display = "flex";
+  footer.style.justifyContent = "flex-end";
+
+  const continueBtn = document.createElement("button");
+  continueBtn.type = "button";
+  continueBtn.textContent = "Resume Command";
+  continueBtn.style.cssText = `
+    padding: 9px 20px;
+    font-weight: bold;
+    cursor: pointer;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+  `;
+
+  const closeModal = () => {
+    document.removeEventListener("keydown", keyHandler);
+    overlay.remove();
+  };
+
+  const keyHandler = (e) => {
+    if (e.key === "Escape" || e.key === "Enter") {
+      e.preventDefault();
+      closeModal();
+    }
+  };
+
+  closeBtn.addEventListener("click", closeModal);
+  continueBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeModal();
+  });
+  document.addEventListener("keydown", keyHandler);
+
+  footer.appendChild(continueBtn);
+  modal.append(header, grid, footer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  continueBtn.focus();
+}
+
+let toastTimeout = null;
+let activeToastMessage = "";
+
+function showToast(message, type = "error", duration = 2500, shouldLog = true) {
+  const isSameActiveToast =
+    toastTimeout !== null && activeToastMessage === message;
+
+  if (!isSameActiveToast && shouldLog && typeof addLog === "function") {
+    addLog(message);
+  }
+
+  const styles = {
+    error: {
+      bg: "rgba(127, 29, 29, 0.8)",
+      text: "#fca5a5dd",
+      border: "rgba(248, 113, 113, 0.7)",
+    },
+    warning: {
+      bg: "rgba(120, 53, 15, 0.7)",
+      text: "#fde68add",
+      border: "rgba(245, 158, 11, 0.6)",
+    },
+    success: {
+      bg: "rgba(20, 83, 45, 0.7)",
+      text: "#86efacdd",
+      border: "rgba(74, 222, 128, 0.6)",
+    },
+    info: {
+      bg: "rgba(30, 41, 59, 0.7)",
+      text: "#e2e8f0dd",
+      border: "rgba(100, 116, 139, 0.6)",
+    },
+  };
+  const theme = styles[type] || styles.info;
+
+  let toast = document.getElementById("game-notice-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "game-notice-toast";
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 0.95rem;
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      z-index: 100000;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.12s ease;
+    `;
+    document.body.appendChild(toast);
+  }
+
+  if (isSameActiveToast) {
+    toast.style.transform = "translateX(-50%) scale(1.04)";
+    setTimeout(() => {
+      toast.style.transform = "translateX(-50%) scale(1)";
+    }, 120);
+  } else {
+    toast.style.background = theme.bg;
+    toast.style.color = theme.text;
+    toast.style.border = `1px solid ${theme.border}`;
+    toast.textContent = message;
+    activeToastMessage = message;
+  }
+
+  toast.style.opacity = "1";
+
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.style.opacity = "0";
+    toastTimeout = null;
+    activeToastMessage = "";
+  }, duration);
+}
+
+function showGameModal({
+  title = "Notice",
+  message = "",
+  type = "info", // "danger" | "warning" | "info"
+  confirmText = "OK",
+  cancelText = null, // Leave null for an alert-style popup; pass "Cancel" for confirm-style
+  closeOnBackdrop = true,
+  inputValue = null, // Pass a string (e.g. "" or JSON) to enable text intake
+  inputPlaceholder = "",
+  showCopy = false,
+  extraButtons = [],
+} = {}) {
+  return new Promise((resolve) => {
+    document.getElementById("custom-game-modal-overlay")?.remove();
+
+    const hasInput = inputValue !== null;
+    const accentColors = {
+      danger: "#ef4444",
+      warning: "#f59e0b",
+      info: "#3b82f6",
+    };
+    const accent = accentColors[type] || accentColors.info;
+
+    const overlay = document.createElement("div");
+    overlay.id = "custom-game-modal-overlay";
+    overlay.className = "unit-popup-overlay";
+    overlay.style.zIndex = "100001";
+
+    const modal = document.createElement("div");
+    modal.className = "unit-popup";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.style.maxWidth = hasInput ? "460px" : "420px";
+    modal.style.width = "90%";
+    modal.style.borderTop = `4px solid ${accent}`;
+
+    const header = document.createElement("div");
+    header.className = "unit-popup-header";
+
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    heading.style.margin = "0";
+    heading.style.color = type === "danger" ? "#fca5a5" : "";
+
+    header.appendChild(heading);
+
+    const body = document.createElement("p");
+    body.textContent = message;
+    body.style.margin = hasInput ? "14px 0 10px 0" : "14px 0 20px 0";
+    body.style.lineHeight = "1.5";
+    body.style.whiteSpace = "pre-line";
+
+    let textarea = null;
+    if (hasInput) {
+      textarea = document.createElement("textarea");
+      textarea.value = String(inputValue);
+      textarea.placeholder = inputPlaceholder;
+      textarea.rows = 4;
+      textarea.spellcheck = false;
+      textarea.style.cssText = `
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 18px;
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(15, 23, 42, 0.65);
+        color: inherit;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.8rem;
+        line-height: 1.4;
+        resize: vertical;
+      `;
+    }
+
+    const footer = document.createElement("div");
+    footer.style.display = "flex";
+    footer.style.justifyContent = "flex-end";
+    footer.style.alignItems = "center";
+    footer.style.gap = "10px";
+
+    const cleanup = (confirmed) => {
+      document.removeEventListener("keydown", keyHandler);
+      const result = hasInput
+        ? confirmed
+          ? (textarea?.value ?? "")
+          : null
+        : Boolean(confirmed);
+      overlay.remove();
+      resolve(result);
+    };
+
+    const keyHandler = (e) => {
+      if (e.key === "Escape") cleanup(false);
+      if (e.key === "Enter" && (!hasInput || e.ctrlKey || e.metaKey)) {
+        cleanup(true);
+      }
+    };
+    document.addEventListener("keydown", keyHandler);
+
+    if (hasInput && showCopy) {
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.textContent = "Copy";
+      copyBtn.style.padding = "8px 14px";
+      copyBtn.style.cursor = "pointer";
+      copyBtn.style.marginRight = "auto";
+      copyBtn.addEventListener("click", async () => {
+        if (!textarea) return;
+        try {
+          await navigator.clipboard.writeText(textarea.value);
+        } catch {
+          textarea.select();
+          document.execCommand("copy");
+        }
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => {
+          copyBtn.textContent = "Copy";
+        }, 1200);
+      });
+      footer.appendChild(copyBtn);
+    }
+
+    for (const btnCfg of extraButtons) {
+      const extraBtn = document.createElement("button");
+      extraBtn.type = "button";
+      extraBtn.textContent = btnCfg.text;
+      extraBtn.style.padding = "8px 14px";
+      extraBtn.style.cursor = "pointer";
+      if (!showCopy && extraBtn === footer.firstChild) {
+        extraBtn.style.marginRight = "auto";
+      }
+      extraBtn.addEventListener("click", () =>
+        btnCfg.onClick?.({ textarea, close: cleanup }),
+      );
+      footer.appendChild(extraBtn);
+    }
+
+    if (cancelText) {
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.textContent = cancelText;
+      cancelBtn.style.padding = "8px 16px";
+      cancelBtn.style.cursor = "pointer";
+      cancelBtn.addEventListener("click", () => cleanup(false));
+      footer.appendChild(cancelBtn);
+    }
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.textContent = confirmText;
+    confirmBtn.style.padding = "8px 18px";
+    confirmBtn.style.fontWeight = "bold";
+    confirmBtn.style.cursor = "pointer";
+    confirmBtn.style.background = accent;
+    confirmBtn.style.color = "#fff";
+    confirmBtn.style.border = "none";
+    confirmBtn.style.borderRadius = "6px";
+    confirmBtn.addEventListener("click", () => cleanup(true));
+    footer.appendChild(confirmBtn);
+
+    if (closeOnBackdrop) {
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) cleanup(false);
+      });
+    }
+
+    if (textarea) {
+      modal.append(header, body, textarea, footer);
+    } else {
+      modal.append(header, body, footer);
+    }
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    if (textarea) {
+      textarea.focus();
+      if (textarea.value) textarea.select();
+    } else {
+      confirmBtn.focus();
+    }
+  });
+}
 
 function syncOptionCheckboxes() {
   const optionMap = [
@@ -749,6 +1786,7 @@ function syncOptionCheckboxes() {
     { id: "toggle-simplified-log-checkbox", val: simplifyBattleLog },
     { id: "toggle-hide-maxed-tech-checkbox", val: hideMaxedTech },
     { id: "toggle-unpin-topbar-checkbox", val: unpinTopBar },
+    { id: "toggle-liquid-glass-checkbox", val: liquidGlassMode },
     { id: "toggle-show-more-stats-checkbox", val: showMoreStats },
     { id: "toggle-show-tech-bonus-checkbox", val: showTechBonus },
     { id: "toggle-show-effective-damage-checkbox", val: showEffectiveDamage },
@@ -812,8 +1850,10 @@ function processTowerStaminaOnWaveClear() {
   for (const unit of deployed) {
     unit.energy = Math.max(0, Number((unit.energy - 0.1).toFixed(2)));
     if (unit.energy <= 0) {
-      addLog(
+      showToast(
         `⚠️ ${getUnitName(unit)} is FATIGUED! (70% Damage & 90% Reward Penalty).`,
+        "warning",
+        2500,
       );
     }
   }
@@ -831,6 +1871,36 @@ function formatGameNumber(num) {
   if (Math.abs(rounded) >= 1e3) {
     return (rounded / 1e3).toFixed(1) + "K";
   }
+  return rounded.toLocaleString();
+}
+
+function formatCombatNumber(num) {
+  if (!Number.isFinite(num)) return "0";
+  const rounded = Math.round(num);
+  const abs = Math.abs(rounded);
+
+  // Exact integer up to 9,999 (keeps Armor & early/mid HP 100% accurate)
+  if (abs < 1e4) {
+    return rounded.toLocaleString();
+  }
+
+  const tiers = [
+    { value: 1e12, suffix: "T" },
+    { value: 1e9, suffix: "B" },
+    { value: 1e6, suffix: "M" },
+    { value: 1e3, suffix: "K" },
+  ];
+
+  for (const { value, suffix } of tiers) {
+    if (abs >= value) {
+      const scaled = rounded / value;
+      const absScaled = Math.abs(scaled);
+      // Always 4 significant digits -> max 6 characters (e.g. 2.145M, 24.58M, 245.8M)
+      const decimals = absScaled >= 100 ? 1 : absScaled >= 10 ? 2 : 3;
+      return scaled.toFixed(decimals) + suffix;
+    }
+  }
+
   return rounded.toLocaleString();
 }
 
@@ -872,7 +1942,7 @@ function cancelAutoRepeat() {
     autoRepeatEnabled = false;
     autoStartWaveEnabled = false; // Disable Auto-Start Wave on cancel
     autoRepeatRemaining = 0;
-    addLog("🛑 Auto-Repeat canceled by manual action.");
+    showToast("🛑 Auto-Repeat canceled by manual action.", "warning", 2500);
 
     if (typeof renderStageSelect === "function") renderStageSelect();
     if (typeof renderAutoWaveControl === "function") renderAutoWaveControl();
@@ -1012,42 +2082,6 @@ function toggleUnitLock(unitId) {
   openUnitPopup(unit.id);
 }
 
-function getEffectiveTowerWeight(typeKey, pool, rarityCounts) {
-  const data = unitTypes[typeKey];
-  const rarity = data?.rarity || "Common";
-  const category = data?.category || "Main";
-
-  // Use category-specific weight table
-  const weightTable =
-    category === "Rear" ? REAR_RARITY_WEIGHTS : MAIN_RARITY_WEIGHTS;
-  const baseWeight = weightTable[rarity] ?? 10;
-  const count = rarityCounts[rarity] || 1;
-
-  const isFocusUnlocked =
-    typeof getTechNodeLevel === "function" &&
-    getTechNodeLevel("eco_focus_pool") >= 1;
-
-  const focusedKey =
-    category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
-
-  const isFocused = isFocusUnlocked && typeKey === focusedKey;
-  const focusedRarity = focusedKey
-    ? unitTypes[focusedKey]?.rarity || "Common"
-    : null;
-  const focusedInPool =
-    isFocusUnlocked && focusedKey && pool.includes(focusedKey);
-
-  if (!focusedInPool || focusedRarity !== rarity || count <= 1) {
-    return baseWeight;
-  }
-
-  const M =
-    typeof FOCUS_TOWER_MULTIPLIER !== "undefined" ? FOCUS_TOWER_MULTIPLIER : 3;
-  const wUnfocused = (count * baseWeight) / (M + count - 1);
-
-  return isFocused ? M * wUnfocused : wUnfocused;
-}
-
 function getRearMaxCooldownTicks(unit) {
   // If unit has an existing cooldownMax computed at battle setup, prefer it
   if (unit.cooldownMax && !isBattleRunning()) {
@@ -1176,7 +2210,7 @@ function cancelWorkerIntermission() {
 
 function consumeUnitForXp(targetId, consumedId) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot consume units while inside a world.");
+    showToast("You cannot consume units while inside a world.", "warning");
     return null;
   }
 
@@ -1184,7 +2218,7 @@ function consumeUnitForXp(targetId, consumedId) {
   const consumedIndex = inventory.findIndex((u) => u.id === consumedId);
 
   if (targetIndex === -1 || consumedIndex === -1 || targetId === consumedId) {
-    addLog("Invalid boost selection.");
+    showToast("Invalid boost selection.", "warning");
     return null;
   }
 
@@ -1210,12 +2244,14 @@ function consumeUnitForXp(targetId, consumedId) {
   recalculateUnitStats(target);
 
   if (levelUps > 0) {
-    addLog(
+    showToast(
       `⭐ ${getUnitName(target)} consumed ${getUnitName(consumed)} (+${earnedXp} XP) and reached Level ${target.level}!`,
+      "success",
     );
   } else {
-    addLog(
+    showToast(
       `🚀 ${getUnitName(target)} consumed ${getUnitName(consumed)} (+${earnedXp} XP). Progress: ${target.xp}/${getRequiredXp(target)} XP.`,
+      "success",
     );
   }
 
@@ -1255,17 +2291,21 @@ function getGrowthFactor(level, unitCategory) {
   const milestones = isRear
     ? [
         { lvl: 1, factor: 1.75 },
-        { lvl: 10, factor: 1.55 }, // Drop 1
-        { lvl: 30, factor: 1.27 }, // Drop 2
-        { lvl: 50, factor: 1.2 }, // Drop 3
-        { lvl: 150, factor: 1.19 },
+        { lvl: 10, factor: 1.55 },
+        { lvl: 30, factor: 1.25 }, 
+        { lvl: 50, factor: 1.2 },
+        { lvl: 60, factor: 1.16 },
+        { lvl: 70, factor: 1.12 },
+        { lvl: 120, factor: 1.05 },
       ]
     : [
         { lvl: 1, factor: 1.65 },
-        { lvl: 10, factor: 1.48 }, // Drop 1
-        { lvl: 30, factor: 1.3 }, // Drop 2
-        { lvl: 50, factor: 1.2 }, // Drop 3
-        { lvl: 150, factor: 1.19 },
+        { lvl: 10, factor: 1.48 }, 
+        { lvl: 30, factor: 1.27 }, 
+        { lvl: 50, factor: 1.2 },
+        { lvl: 60, factor: 1.16 },
+        { lvl: 70, factor: 1.12 },
+        { lvl: 120, factor: 1.05 },
       ];
 
   // Find the current milestone segment
@@ -1465,11 +2505,11 @@ function recalculateUnitStats(unit) {
   // Retrieve Challenge Bonuses
   const cbDamage =
     typeof getChallengeBonusLevel === "function"
-      ? getChallengeBonusLevel("cb_base_damage") * 0.5
+      ? getChallengeBonusLevel("cb_base_damage") * 0.2
       : 0;
   const cbFireRate =
     typeof getChallengeBonusLevel === "function"
-      ? getChallengeBonusLevel("cb_reload_speed") * 0.1
+      ? getChallengeBonusLevel("cb_reload_speed") * 0.01
       : 0;
 
   // 1. Set Base Tower Stats (Template Base + Flat Challenge Bonuses)
@@ -1568,6 +2608,7 @@ function restoreUnit(unit) {
   if (!Number.isInteger(unit.upgradeCount) || unit.upgradeCount < 0)
     unit.upgradeCount = 0;
 
+  unit.rarity = baseData.rarity || "Common";
   unit.category = baseData.category || "Main";
   unit.targeting ??= unit.category === "Rear" ? "Strongest" : "First";
 
@@ -1645,15 +2686,15 @@ function getRandomUnitTypeByCategory(category = "Main") {
     ...new Set(availableKeys.map((k) => unitTypes[k]?.rarity || "Common")),
   ];
 
-  // 2. Roll for Rarity Tier first
+  // 2. Roll for Rarity Tier first (use ?? so 0-weight tiers stay 0)
   let totalRarityWeight = 0;
-  presentRarities.forEach((r) => (totalRarityWeight += weightTable[r] || 10));
+  presentRarities.forEach((r) => (totalRarityWeight += weightTable[r] ?? 10));
 
   let rarityRoll = Math.random() * totalRarityWeight;
   let selectedRarity = presentRarities[0];
 
   for (const r of presentRarities) {
-    const w = weightTable[r] || 10;
+    const w = weightTable[r] ?? 10;
     if (rarityRoll < w) {
       selectedRarity = r;
       break;
@@ -1661,15 +2702,53 @@ function getRandomUnitTypeByCategory(category = "Main") {
     rarityRoll -= w;
   }
 
-  // 3. Pick a unit uniformly from the chosen rarity tier
+  // 3. Pick a unit using focus weights within the chosen rarity tier
   const matchingUnits = availableKeys.filter(
     (k) => (unitTypes[k]?.rarity || "Common") === selectedRarity,
   );
-  return matchingUnits[Math.floor(Math.random() * matchingUnits.length)];
+
+  const isFocusUnlocked =
+    typeof getTechNodeLevel === "function" &&
+    getTechNodeLevel("eco_focus_pool") >= 1;
+  const activeFocusedKey =
+    category === "Rear" ? focusedRearTowerKey : focusedMainTowerKey;
+  const focusMult =
+    typeof FOCUS_TOWER_MULTIPLIER !== "undefined" ? FOCUS_TOWER_MULTIPLIER : 10;
+
+  let totalSubWeight = 0;
+  const weightedUnits = matchingUnits.map((typeKey) => {
+    const isFocused = isFocusUnlocked && typeKey === activeFocusedKey;
+    const weight = isFocused ? focusMult : 1;
+    totalSubWeight += weight;
+    return { typeKey, weight };
+  });
+
+  let unitRoll = Math.random() * totalSubWeight;
+  for (const entry of weightedUnits) {
+    if (unitRoll < entry.weight) {
+      return entry.typeKey;
+    }
+    unitRoll -= entry.weight;
+  }
+
+  return weightedUnits[weightedUnits.length - 1].typeKey;
 }
 
 function buyRandomUnit(category = "Main", count = 1) {
   if (isBattleRunning()) return;
+
+  const currentCount = inventory.length;
+  const availableSlots = MAX_INVENTORY_CAP - currentCount;
+
+  if (availableSlots < count) {
+    const msg =
+      availableSlots <= 0
+        ? `⚠️ Inventory is full! (${currentCount}/${MAX_INVENTORY_CAP})`
+        : `⚠️ Not enough space to build ${count} units (${availableSlots} slot${availableSlots === 1 ? "" : "s"} left).`;
+
+    showToast(msg, "error");
+    return false;
+  }
 
   if (category === "Rear") {
     const rearUnlocked =
@@ -1680,8 +2759,9 @@ function buyRandomUnit(category = "Main", count = 1) {
           : true;
 
     if (!rearUnlocked) {
-      addLog(
+      showToast(
         "Rear towers are locked! Research Base Defense Protocol in the Tech Tree.",
+        "warning",
       );
       return;
     }
@@ -1693,15 +2773,17 @@ function buyRandomUnit(category = "Main", count = 1) {
   const totalStCost = singleStCost * count;
 
   if (gold < totalCost) {
-    addLog(
+    showToast(
       `Not enough gold to buy ${count > 1 ? `${count}x ` : "a "}${category} tower${count > 1 ? "s" : ""}.`,
+      "warning",
     );
     return;
   }
 
   if (st < totalStCost) {
-    addLog(
+    showToast(
       `Not enough ST to buy ${count > 1 ? `${count}x ` : "a "}${category} tower${count > 1 ? "s" : ""}.`,
+      "warning",
     );
     return;
   }
@@ -1724,9 +2806,25 @@ function buyRandomUnit(category = "Main", count = 1) {
 
     const alreadyOwns =
       alreadyInInventory || alreadyDeployedMain || alreadyDeployedBase;
+    const isFirstDiscovery =
+      !alreadyOwns && !discoveredTowerTypes.has(unitType);
 
     const unit = createUnit(unitType);
     unit.isLocked = !alreadyOwns;
+
+    if (isFirstDiscovery) {
+      discoveredTowerTypes.add(unitType);
+      newTowerTypes.add(unitType);
+
+      // If inventory is already expanded when pulled, mark it to clear on close
+      const invPanel = document.querySelector(".inventory-panel");
+      if (
+        inventorySettings.showNewHighlight &&
+        invPanel?.classList.contains("expanded")
+      ) {
+        pendingClearNewTowerTypes.add(unitType);
+      }
+    }
 
     inventory.push(unit);
 
@@ -1794,7 +2892,11 @@ function createUnit(type) {
 function getUpgradeCost(unit) {
   if (!unit) return 0;
 
-  const rarity = (unit.rarity || "common").toLowerCase();
+  const rarity = (
+    unit.rarity ||
+    unitTypes[unit.type]?.rarity ||
+    "common"
+  ).toLowerCase();
   const category = (
     unit.category ||
     unitTypes[unit.type]?.category ||
@@ -1819,7 +2921,7 @@ function getUpgradeCost(unit) {
 
 function upgradeUnit(targetId, duplicateId) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot upgrade units while inside a world.");
+    showToast("You cannot upgrade units while inside a world.", "warning");
     return;
   }
 
@@ -1827,7 +2929,7 @@ function upgradeUnit(targetId, duplicateId) {
   const duplicateIndex = inventory.findIndex((unit) => unit.id === duplicateId);
 
   if (targetIndex === -1 || duplicateIndex === -1 || targetId === duplicateId) {
-    addLog("Invalid upgrade selection.");
+    showToast("Invalid upgrade selection.", "warning");
     return;
   }
 
@@ -1835,14 +2937,23 @@ function upgradeUnit(targetId, duplicateId) {
   const duplicate = inventory[duplicateIndex];
 
   if (target.type !== duplicate.type) {
-    addLog("You can only merge towers of the same type.");
+    showToast("You can only merge towers of the same type.", "warning");
+    return;
+  }
+
+  const maxUpgrades = getMaxUpgrades(target);
+  if ((target.upgradeCount ?? 0) >= maxUpgrades) {
+    showToast(
+      `${getUnitName(target)} has reached its maximum of ${maxUpgrades} upgrades.`,
+      "warning",
+    );
     return;
   }
 
   const cost = getUpgradeCost(target);
 
   if (gold < cost) {
-    addLog(`Not enough gold. This upgrade costs ${cost} gold.`);
+    showToast(`Not enough gold. This upgrade costs ${cost} gold.`, "warning");
     return;
   }
 
@@ -1877,8 +2988,9 @@ function upgradeUnit(targetId, duplicateId) {
   recalculateUnitStats(target);
   selectedUpgradeTargetId = null;
 
-  addLog(
+  showToast(
     `${getUnitName(target)} upgraded! ${stat}: ${oldValue} → ${target[stat]}. ${getUnitName(duplicate)} was consumed.`,
+    "success",
   );
 
   saveCampaignProgress();
@@ -1893,7 +3005,7 @@ function upgradeUnit(targetId, duplicateId) {
 
 function deployUnit(unitId, slotIndex) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot change deployment while inside a world.");
+    showToast("You cannot change deployment while inside a world.", "warning");
     return;
   }
 
@@ -1907,7 +3019,10 @@ function deployUnit(unitId, slotIndex) {
 
   const maxAllowed = getMaxDeployedUnits();
   if (getDeployedCount() >= maxAllowed) {
-    addLog(`Deployment limit reached. Maximum: ${maxAllowed} units.`);
+    showToast(
+      `Deployment limit reached. Maximum: ${maxAllowed} units.`,
+      "warning",
+    );
     return;
   }
 
@@ -1916,7 +3031,7 @@ function deployUnit(unitId, slotIndex) {
 
   const unit = inventory[inventoryIndex];
   if ((unit.category || "Main") !== "Main") {
-    addLog("Only Main towers can be deployed in lane slots.");
+    showToast("Only Main towers can be deployed in lane slots.", "warning");
     return;
   }
 
@@ -1925,7 +3040,10 @@ function deployUnit(unitId, slotIndex) {
     (u) => u !== null && u.type === unit.type,
   );
   if (isAlreadyDeployed) {
-    addLog(`You can only deploy one ${getUnitName(unit)} at a time!`);
+    showToast(
+      `You can only deploy one ${getUnitName(unit)} at a time!`,
+      "warning",
+    );
     return;
   }
 
@@ -1946,7 +3064,7 @@ function deployUnit(unitId, slotIndex) {
 
 function deployBaseUnit(unitId, baseSlotIndex) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot change deployment while inside a world.");
+    showToast("You cannot change deployment while inside a world.", "warning");
     return;
   }
 
@@ -1958,7 +3076,7 @@ function deployBaseUnit(unitId, baseSlotIndex) {
     return;
 
   if (deployedBaseUnits[baseSlotIndex] !== null) {
-    addLog(`Base Slot ${baseSlotIndex + 1} is already occupied.`);
+    showToast(`Base Slot ${baseSlotIndex + 1} is already occupied.`, "warning");
     return;
   }
 
@@ -1967,7 +3085,7 @@ function deployBaseUnit(unitId, baseSlotIndex) {
 
   const unit = inventory[inventoryIndex];
   if (unit.category !== "Rear") {
-    addLog("Only Rear towers can be deployed in Base slots.");
+    showToast("Only Rear towers can be deployed in Base slots.", "warning");
     return;
   }
 
@@ -1976,7 +3094,10 @@ function deployBaseUnit(unitId, baseSlotIndex) {
     (u) => u !== null && u.type === unit.type,
   );
   if (isAlreadyDeployed) {
-    addLog(`You can only deploy one ${getUnitName(unit)} at a time!`);
+    showToast(
+      `You can only deploy one ${getUnitName(unit)} at a time!`,
+      "warning",
+    );
     return;
   }
 
@@ -1995,7 +3116,7 @@ function deployBaseUnit(unitId, baseSlotIndex) {
 
 function undeployUnit(slotIndex) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot recall units while inside a world.");
+    showToast("You cannot recall units while inside a world.", "warning");
     return;
   }
 
@@ -2022,7 +3143,7 @@ function undeployUnit(slotIndex) {
 
 function undeployBaseUnit(baseSlotIndex) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot recall units while inside a world.");
+    showToast("You cannot recall units while inside a world.", "warning");
     return;
   }
 
@@ -2042,7 +3163,10 @@ function undeployBaseUnit(baseSlotIndex) {
   inventory.push(unit);
 
   saveCampaignProgress();
-  addLog(`${getUnitName(unit)} recalled from Base Slot ${baseSlotIndex + 1}.`);
+  showToast(
+    `${getUnitName(unit)} recalled from Base Slot ${baseSlotIndex + 1}.`,
+    "warning",
+  );
 
   updateUI();
   renderInventory();
@@ -2164,13 +3288,13 @@ function renderPresetBar() {
 
 function applyPreset(index) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot change deployment while inside a world.");
+    showToast("You cannot change deployment while inside a world.", "warning");
     return;
   }
 
   const preset = deploymentPresets[index];
   if (!preset) {
-    addLog(`Preset ${index + 1} is empty! Save a setup first.`);
+    showToast(`Preset ${index + 1} is empty! Save a setup first.`, "warning");
     return;
   }
 
@@ -2485,47 +3609,244 @@ function renderWarehouseList() {
   }
 }
 
-function renderInventory() {
-  inventoryList.replaceChildren();
+function ensureInventorySortOptions() {
+  if (!inventorySortSelect) return;
+  const hasEnergy = Array.from(inventorySortSelect.options).some(
+    (opt) => opt.value === "energy",
+  );
+  if (!hasEnergy) {
+    const firstText = inventorySortSelect.options[0]?.textContent || "";
+    const usesSortPrefix = firstText.startsWith("Sort:");
+    const opt = document.createElement("option");
+    opt.value = "energy";
+    opt.textContent = usesSortPrefix ? "Sort: Energy" : "Energy";
+    inventorySortSelect.appendChild(opt);
+  }
+}
 
-  const inventoryPanel = document.querySelector(".inventory-panel");
-  const isExpanded = inventoryPanel?.classList.contains("expanded");
-
-  // Manage Energy Select visibility (Only visible when inventory is expanded)
-  let energySelect = document.getElementById("inventory-energy-mode-select");
-  if (!energySelect && isExpanded) {
-    const controlsContainer = document.querySelector(".inventory-controls");
-    if (controlsContainer) {
-      energySelect = document.createElement("select");
-      energySelect.id = "inventory-energy-mode-select";
-
-      const modes = [
-        { value: "hide", label: "Energy: Off" },
-        { value: "show", label: "Energy: Show" },
-        { value: "sort", label: "Energy: Sort (High→Low)" },
-        { value: "sort_rev", label: "Energy: Sort (Low→High)" },
-      ];
-
-      for (const m of modes) {
-        const opt = document.createElement("option");
-        opt.value = m.value;
-        opt.textContent = m.label;
-        energySelect.appendChild(opt);
-      }
-
-      energySelect.addEventListener("change", (e) => {
-        energyMode = e.target.value;
-        saveCampaignProgress();
-        renderInventory();
-      });
-
-      controlsContainer.appendChild(energySelect);
+function getUnitPresetNumbers(unit) {
+  if (!unit || !Array.isArray(deploymentPresets)) return [];
+  const nums = [];
+  for (let i = 0; i < deploymentPresets.length; i++) {
+    const preset = deploymentPresets[i];
+    if (!preset) continue;
+    const inMain = Array.isArray(preset.main) && preset.main.includes(unit.id);
+    const inBase = Array.isArray(preset.base) && preset.base.includes(unit.id);
+    if (inMain || inBase) {
+      nums.push(i + 1);
     }
   }
+  return nums;
+}
 
-  if (energySelect) {
-    energySelect.value = energyMode;
-    energySelect.style.display = isExpanded ? "inline-block" : "none";
+function closeInventorySettingsPopup() {
+  document.getElementById("inventory-settings-overlay")?.remove();
+}
+
+function openInventorySettingsPopup() {
+  closeInventorySettingsPopup();
+
+  const overlay = document.createElement("div");
+  overlay.id = "inventory-settings-overlay";
+  overlay.className = "unit-popup-overlay quick-sac-modal-overlay";
+  overlay.style.zIndex = "99999";
+
+  const modal = document.createElement("div");
+  modal.className = "unit-popup quick-sac-modal";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+
+  const header = document.createElement("div");
+  header.className = "unit-popup-header";
+
+  const title = document.createElement("h2");
+  title.textContent = "Inventory Settings";
+  title.style.margin = "0";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "unit-popup-close";
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", closeInventorySettingsPopup);
+
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+
+  const list = document.createElement("div");
+  list.className = "quick-sac-list";
+  list.style.display = "flex";
+  list.style.flexDirection = "column";
+  list.style.gap = "10px";
+  list.style.marginTop = "8px";
+
+  const options = [
+    {
+      key: "showNewHighlight",
+      label: "Highlight New Tower Types",
+      desc: "Show a NEW highlight on newly discovered tower types until inventory is closed",
+    },
+    {
+      key: "showEnergy",
+      label: "Show Energy",
+      desc: "Show energy values and card tint on towers",
+    },
+    {
+      key: "showPresets",
+      label: "Show Presets",
+      desc: "Show preset number tags (e.g. 1, 2) on tower corners",
+    },
+    {
+      key: "presetsAtTop",
+      label: "Show Presets at Top",
+      desc: "Move preset towers to the top while keeping normal sort inside",
+    },
+    {
+      key: "showDeployedTowers",
+      label: "Show Deployed Towers",
+      desc: "Display deployed towers in the preset section (greyed out)",
+    },
+  ];
+
+  for (const opt of options) {
+    const row = document.createElement("label");
+    row.className = "quick-sac-confirm-toggle";
+    row.title = opt.desc;
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.justifyContent = "space-between";
+    row.style.gap = "12px";
+    row.style.padding = "6px 4px";
+    row.style.cursor = "pointer";
+
+    const textWrap = document.createElement("div");
+    textWrap.style.display = "flex";
+    textWrap.style.flexDirection = "column";
+
+    const mainLabel = document.createElement("span");
+    mainLabel.style.fontWeight = "600";
+    mainLabel.textContent = opt.label;
+
+    const subLabel = document.createElement("small");
+    subLabel.style.opacity = "0.75";
+    subLabel.textContent = opt.desc;
+
+    textWrap.append(mainLabel, subLabel);
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(inventorySettings[opt.key]);
+    checkbox.style.width = "16px";
+    checkbox.style.height = "16px";
+    checkbox.style.flexShrink = "0";
+
+    checkbox.addEventListener("change", (e) => {
+      inventorySettings[opt.key] = e.target.checked;
+      if (
+        opt.key === "showNewHighlight" &&
+        e.target.checked &&
+        document
+          .querySelector(".inventory-panel")
+          ?.classList.contains("expanded")
+      ) {
+        for (const typeKey of newTowerTypes) {
+          pendingClearNewTowerTypes.add(typeKey);
+        }
+      }
+      saveCampaignProgress();
+      renderInventory();
+    });
+
+    row.append(textWrap, checkbox);
+    list.appendChild(row);
+  }
+
+  modal.appendChild(list);
+  overlay.appendChild(modal);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeInventorySettingsPopup();
+  });
+
+  document.body.appendChild(overlay);
+}
+
+function clearNewTowerType(unitType) {
+  if (!newTowerTypes.has(unitType)) return;
+
+  newTowerTypes.delete(unitType);
+  pendingClearNewTowerTypes.delete(unitType);
+  saveCampaignProgress();
+
+  // Immediately strip the highlight & badge from any visible cards of this type
+  document
+    .querySelectorAll(
+      `.unit-card.new-tower-type[data-unit-type="${CSS.escape(unitType)}"]`,
+    )
+    .forEach((el) => {
+      el.classList.remove("new-tower-type");
+      el.querySelector(".inventory-new-badge")?.remove();
+    });
+
+  // Update the expand button glow if no new tower types remain
+  const isExpanded = document
+    .querySelector(".inventory-panel")
+    ?.classList.contains("expanded");
+  const hasUnseenNew =
+    Boolean(inventorySettings.showNewHighlight) && newTowerTypes.size > 0;
+
+  if (toggleInventoryButton) {
+    toggleInventoryButton.classList.toggle(
+      "has-new-towers",
+      hasUnseenNew && !isExpanded,
+    );
+  }
+}
+
+function renderInventory() {
+  inventoryList.replaceChildren();
+  ensureInventorySortOptions();
+
+  let settingsBtn = document.getElementById("inventory-settings-btn");
+
+  if (
+    !settingsBtn &&
+    toggleInventoryButton &&
+    toggleInventoryButton.parentNode
+  ) {
+    settingsBtn = document.createElement("button");
+    settingsBtn.type = "button";
+    settingsBtn.id = "inventory-settings-btn";
+    if (toggleInventoryButton.className) {
+      settingsBtn.className = toggleInventoryButton.className;
+    }
+    settingsBtn.textContent = "⚙️";
+    settingsBtn.title = "Inventory Settings";
+    settingsBtn.setAttribute("aria-label", "Inventory Settings");
+    settingsBtn.style.display = "inline-flex";
+    settingsBtn.style.alignItems = "center";
+    settingsBtn.style.justifyContent = "center";
+    settingsBtn.style.marginLeft = "auto";
+    settingsBtn.style.padding = "0 8px";
+    settingsBtn.style.flexShrink = "0";
+
+    toggleInventoryButton.style.marginLeft = "0";
+
+    settingsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openInventorySettingsPopup();
+    });
+
+    toggleInventoryButton.parentNode.insertBefore(
+      settingsBtn,
+      toggleInventoryButton,
+    );
+  }
+
+  if (settingsBtn) {
+    if (toggleInventoryButton && toggleInventoryButton.offsetHeight > 0) {
+      settingsBtn.style.height = `${toggleInventoryButton.offsetHeight}px`;
+    }
+    settingsBtn.disabled = currentInventoryTab === "warehouse";
   }
 
   if (currentInventoryTab === "warehouse") {
@@ -2533,13 +3854,36 @@ function renderInventory() {
     return;
   }
 
+  const inventoryPanel = document.querySelector(".inventory-panel");
+  const isExpanded = inventoryPanel?.classList.contains("expanded");
   const dir = inventorySortAsc ? -1 : 1;
+
+  const hasUnseenNew =
+    Boolean(inventorySettings.showNewHighlight) && newTowerTypes.size > 0;
+  if (toggleInventoryButton) {
+    toggleInventoryButton.classList.toggle(
+      "has-new-towers",
+      hasUnseenNew && !isExpanded,
+    );
+  }
+
+  // Build combined list (Inventory + optionally Deployed Towers)
+  const entries = inventory.map((unit) => ({ unit, isDeployed: false }));
+
+  if (inventorySettings.showDeployedTowers) {
+    for (const unit of deployedUnits) {
+      if (unit !== null) entries.push({ unit, isDeployed: true });
+    }
+    for (const unit of deployedBaseUnits) {
+      if (unit !== null) entries.push({ unit, isDeployed: true });
+    }
+  }
 
   // 1. Pre-calculate peak levels
   const typeMaxLevels = {};
   const typeMaxLevelsByUpgrade = {};
 
-  for (const unit of inventory) {
+  for (const { unit } of entries) {
     const uType = unit.type || "unknown";
     const uLvl = Number(unit.level) || 1;
     const uUpg = Number(unit.upgradeCount) || 0;
@@ -2559,22 +3903,25 @@ function renderInventory() {
     }
   }
 
-  // 2. Filter & Sort inventory
-  const filteredInventory = inventory
-    .filter((unit) => {
+  // 2. Filter & Sort entries
+  const filteredEntries = entries
+    .filter(({ unit }) => {
       const cat = unit.category || "Main";
       if (inventoryFilter === "all") return true;
       return cat === inventoryFilter;
     })
     .slice()
-    .sort((a, b) => {
-      // --- ENERGY PRE-SORTING (Evaluated before main sort mode) ---
-      if (energyMode === "sort" || energyMode === "sort_rev") {
-        const energyA = a.energy ?? 100;
-        const energyB = b.energy ?? 100;
-        if (energyA !== energyB) {
-          return energyMode === "sort" ? energyB - energyA : energyA - energyB;
-        }
+    .sort((entryA, entryB) => {
+      const a = entryA.unit;
+      const b = entryB.unit;
+
+      // Pin Presets & Deployed Towers to top section while preserving normal sort inside
+      if (inventorySettings.presetsAtTop) {
+        const topA =
+          entryA.isDeployed || getUnitPresetNumbers(a).length > 0 ? 1 : 0;
+        const topB =
+          entryB.isDeployed || getUnitPresetNumbers(b).length > 0 ? 1 : 0;
+        if (topA !== topB) return topB - topA;
       }
 
       const dataA = getUnitData(a);
@@ -2596,6 +3943,19 @@ function renderInventory() {
       let primaryDiff = 0;
 
       switch (inventorySort) {
+        case "energy": {
+          const energyA = a.energy ?? 100;
+          const energyB = b.energy ?? 100;
+          primaryDiff = energyB - energyA;
+          if (primaryDiff !== 0) return primaryDiff * dir;
+          if (rarityB !== rarityA) return rarityB - rarityA;
+          if (lvlB !== lvlA) return lvlB - lvlA;
+          if (nameA.localeCompare(nameB) !== 0)
+            return nameA.localeCompare(nameB);
+          if (lockB !== lockA) return lockB - lockA;
+          return a.id - b.id;
+        }
+
         case "level":
           primaryDiff = lvlB - lvlA;
           if (primaryDiff !== 0) return primaryDiff * dir;
@@ -2655,7 +4015,7 @@ function renderInventory() {
       }
     });
 
-  if (filteredInventory.length === 0) {
+  if (filteredEntries.length === 0) {
     const emptyMessage = document.createElement("p");
     emptyMessage.textContent = "No matching towers in inventory.";
     inventoryList.appendChild(emptyMessage);
@@ -2663,16 +4023,23 @@ function renderInventory() {
   }
 
   // Render cards
-  for (const unit of filteredInventory) {
+  for (const { unit, isDeployed } of filteredEntries) {
     const data = getUnitData(unit);
     const rarityClass = (data.rarity || "Common").toLowerCase();
 
     const card = document.createElement("button");
     card.type = "button";
     card.className = `unit-card unit-card-compact ${rarityClass}`;
+    card.style.position = "relative";
 
     if (unit.id === selectedUpgradeTargetId) {
       card.classList.add("selected-target");
+    }
+
+    if (isDeployed) {
+      card.classList.add("deployed-inventory-card");
+      card.style.filter = "grayscale(1)";
+      card.style.opacity = "0.62";
     }
 
     const name = document.createElement("strong");
@@ -2681,12 +4048,11 @@ function renderInventory() {
     const label = document.createElement("span");
     label.className = "unit-card-level";
 
-    const isEnergyActive = energyMode !== "hide";
+    const isEnergyActive = Boolean(inventorySettings.showEnergy);
     const energyText = isEnergyActive
       ? ` · E: ${Math.round(unit.energy ?? 100)}`
       : "";
 
-    // Omit rarity text whenever Energy Mode is enabled
     if (isExpanded) {
       if (isEnergyActive) {
         label.textContent = `Lv. ${unit.level} · ${unit.upgradeCount}${energyText}`;
@@ -2695,13 +4061,63 @@ function renderInventory() {
       }
     } else if (inventorySort === "upgrades") {
       label.textContent = `Upgrades: ${unit.upgradeCount}`;
+    } else if (inventorySort === "energy") {
+      label.textContent = `E: ${Math.round(unit.energy ?? 100)}`;
     } else {
       label.textContent = `Lv. ${unit.level}`;
     }
 
     card.append(name, label);
 
-    // Apply Full-Card Energy Tint Overlay (shade changes based on energy level)
+    // Preset Number Corner Tag
+    if (inventorySettings.showPresets) {
+      const presetNums = getUnitPresetNumbers(unit);
+      if (presetNums.length > 0) {
+        const presetBadge = document.createElement("span");
+        presetBadge.className = "inventory-preset-badge";
+        presetBadge.textContent = presetNums.join(", ");
+        presetBadge.title = `In Preset ${presetNums.join(", ")}`;
+        presetBadge.style.cssText = `
+          position: absolute;
+          top: 3px;
+          right: 4px;
+          font-size: 0.65rem;
+          font-weight: 700;
+          line-height: 1;
+          padding: 2px 4px;
+          border-radius: 4px;
+          background: rgba(15, 23, 42, 0.85);
+          color: #fbbf24;
+          border: 1px solid rgba(251, 191, 36, 0.55);
+          pointer-events: none;
+          z-index: 2;
+        `;
+        card.appendChild(presetBadge);
+      }
+    }
+
+    const isNewTowerType =
+      Boolean(inventorySettings.showNewHighlight) &&
+      !isDeployed &&
+      newTowerTypes.has(unit.type);
+
+    if (isNewTowerType) {
+      card.classList.add("new-tower-type");
+      card.dataset.unitType = unit.type;
+
+      const newBadge = document.createElement("div");
+      newBadge.className = "inventory-new-badge";
+      newBadge.textContent = "NEW";
+      card.appendChild(newBadge);
+    }
+
+    card.addEventListener("click", () => {
+      if (newTowerTypes.has(unit.type)) {
+        clearNewTowerType(unit.type);
+      }
+    });
+
+    // Full-Card Energy Tint Overlay
     if (isEnergyActive) {
       const curEnergy = unit.energy ?? 100;
       const maxEnergy = unit.maxEnergy ?? 100;
@@ -2711,9 +4127,7 @@ function renderInventory() {
       overlay.className = "energy-card-overlay";
 
       const hue = Math.round((pct / 100) * 200);
-
       overlay.style.background = `hsla(${hue}, 85%, 45%, 0.28)`;
-
       overlay.style.width = "100%";
       card.prepend(overlay);
     }
@@ -2749,8 +4163,24 @@ function closeUnitPopup() {
 function openUnitPopup(unitId, xpAnimData = null) {
   closeUnitPopup();
 
-  const unit = inventory.find((item) => item.id === unitId);
+  const isDeployedUnit =
+    deployedUnits.some((u) => u && u.id === unitId) ||
+    deployedBaseUnits.some((u) => u && u.id === unitId);
+
+  const unit =
+    inventory.find((item) => item.id === unitId) ||
+    deployedUnits.find((item) => item && item.id === unitId) ||
+    deployedBaseUnits.find((item) => item && item.id === unitId);
   if (!unit) return;
+
+  const disableDeployedControl = (el) => {
+    if (!el) return;
+    el.disabled = true;
+    el.style.opacity = "0.45";
+    el.style.filter = "grayscale(1)";
+    el.style.cursor = "not-allowed";
+    el.style.pointerEvents = "none";
+  };
 
   const data = getUnitData(unit);
   const isRear = (unit.category || "Main") === "Rear";
@@ -2804,7 +4234,11 @@ function openUnitPopup(unitId, xpAnimData = null) {
   lockBtn.className = `unit-lock-btn ${unit.isLocked ? "locked" : "unlocked"}`;
   const symbol = unit.isLocked ? "\u2612" : "\u2610";
   lockBtn.textContent = `${symbol} ${unit.isLocked ? "LOCKED" : "UNLOCKED"}`;
-  lockBtn.addEventListener("click", () => toggleUnitLock(unit.id));
+  if (isDeployedUnit) {
+    disableDeployedControl(lockBtn);
+  } else {
+    lockBtn.addEventListener("click", () => toggleUnitLock(unit.id));
+  }
 
   titleRow.append(title, lockBtn);
 
@@ -3071,8 +4505,12 @@ function openUnitPopup(unitId, xpAnimData = null) {
   boostBtn.type = "button";
   boostBtn.className = "xp-boost-btn";
   boostBtn.textContent = "Boost";
-  boostBtn.disabled = stageEntered || isBattleRunning();
-  boostBtn.addEventListener("click", () => openBoostMenu(unit.id));
+  if (isDeployedUnit) {
+    disableDeployedControl(boostBtn);
+  } else {
+    boostBtn.disabled = stageEntered || isBattleRunning();
+    boostBtn.addEventListener("click", () => openBoostMenu(unit.id));
+  }
 
   const xpValue = document.createElement("strong");
   const initialPercent = Math.min(
@@ -3271,7 +4709,18 @@ function openUnitPopup(unitId, xpAnimData = null) {
     slotSelect.appendChild(fallbackOption);
   }
 
+  if (isDeployedUnit) {
+    slotSelect.options.length = 0;
+    const deployedOpt = document.createElement("option");
+    deployedOpt.value = "";
+    deployedOpt.textContent = "Currently Deployed";
+    deployedOpt.disabled = true;
+    deployedOpt.selected = true;
+    slotSelect.appendChild(deployedOpt);
+  }
+
   const cannotDeploy =
+    isDeployedUnit ||
     stageEntered ||
     isBattleRunning() ||
     isDuplicateDeployed ||
@@ -3283,12 +4732,17 @@ function openUnitPopup(unitId, xpAnimData = null) {
   const deployButton = document.createElement("button");
   deployButton.textContent = "Deploy";
   deployButton.disabled = cannotDeploy;
-  deployButton.addEventListener("click", () => {
-    const slotIndex = Number(slotSelect.value);
-    closeUnitPopup();
-    if (isRear) deployBaseUnit(unit.id, slotIndex);
-    else deployUnit(unit.id, slotIndex);
-  });
+  if (isDeployedUnit) {
+    disableDeployedControl(slotSelect);
+    disableDeployedControl(deployButton);
+  } else {
+    deployButton.addEventListener("click", () => {
+      const slotIndex = Number(slotSelect.value);
+      closeUnitPopup();
+      if (isRear) deployBaseUnit(unit.id, slotIndex);
+      else deployUnit(unit.id, slotIndex);
+    });
+  }
 
   const deployRow = document.createElement("div");
   deployRow.className = "deploy-row";
@@ -3297,9 +4751,14 @@ function openUnitPopup(unitId, xpAnimData = null) {
   deployContainer.append(deployLabel, deployRow);
 
   const upgradeButton = document.createElement("button");
-  upgradeButton.textContent = "Upgrade";
-  upgradeButton.disabled = stageEntered || isBattleRunning();
-  upgradeButton.addEventListener("click", () => openUpgradeMenu(unit.id));
+  upgradeButton.textContent = isMaxUpgraded(unit) ? "Max Upgrades" : "Upgrade";
+  if (isDeployedUnit) {
+    disableDeployedControl(upgradeButton);
+  } else {
+    upgradeButton.disabled =
+      stageEntered || isBattleRunning() || isMaxUpgraded(unit);
+    upgradeButton.addEventListener("click", () => openUpgradeMenu(unit.id));
+  }
 
   actions.append(deployContainer, upgradeButton);
   popup.appendChild(actions);
@@ -3356,8 +4815,15 @@ function openUpgradeMenu(targetId) {
   panel.appendChild(header);
 
   const cost = getUpgradeCost(target);
+
   const costText = document.createElement("p");
-  costText.textContent = `Cost: ${typeof formatGameNumber === "function" ? formatGameNumber(cost) : cost} Gold`;
+  if (isMaxUpgraded(target)) {
+    costText.textContent = `Upgrades: ${target.upgradeCount} (MAX)`;
+    costText.style.color = "#fbbf24";
+    costText.style.fontWeight = "bold";
+  } else {
+    costText.textContent = `Cost: ${typeof formatGameNumber === "function" ? formatGameNumber(cost) : cost} Gold`;
+  }
   panel.appendChild(costText);
 
   // --- Sort & Direction Controls ---
@@ -3515,7 +4981,8 @@ function openUpgradeMenu(targetId) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `unit-card unit-card-compact ${rarityClass}`;
-    button.disabled = stageEntered || isBattleRunning() || gold < cost;
+    button.disabled =
+      stageEntered || isBattleRunning() || isMaxUpgraded(target) || gold < cost;
 
     const cleanName = data.name.replace(/\s*\[(Main|Rear)\]\s*/gi, "");
 
@@ -3530,7 +4997,9 @@ function openUpgradeMenu(targetId) {
     button.addEventListener("click", () => {
       upgradeUnit(target.id, duplicate.id);
       openUnitPopup(target.id);
-      openUpgradeMenu(target.id);
+      if (!isMaxUpgraded(target)) {
+        openUpgradeMenu(target.id);
+      }
     });
 
     panel.appendChild(button);
@@ -3612,7 +5081,7 @@ function getQuickSacCandidates(targetId) {
 
 function executeQuickSacrifice(targetId) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot consume units while inside a world.");
+    showToast("You cannot consume units while inside a world.", "warning");
     return;
   }
 
@@ -3621,7 +5090,7 @@ function executeQuickSacrifice(targetId) {
 
   const toSacrifice = getQuickSacCandidates(targetId);
   if (toSacrifice.length === 0) {
-    addLog("No unlocked towers match your Quick Sac settings.");
+    showToast("No unlocked towers match your Quick Sac settings.", "warning");
     return;
   }
 
@@ -3660,12 +5129,14 @@ function executeQuickSacrifice(targetId) {
       : totalEarnedXp;
 
   if (target.level > startLevel) {
-    addLog(
+    showToast(
       `⭐ Quick Sacrificed ${toSacrifice.length} tower(s) into ${getUnitName(target)} (+${formattedXp} XP) → Level ${target.level}!`,
+      "success",
     );
   } else {
-    addLog(
+    showToast(
       `⚡ Quick Sacrificed ${toSacrifice.length} tower(s) into ${getUnitName(target)} (+${formattedXp} XP).`,
+      "success",
     );
   }
 
@@ -3940,13 +5411,13 @@ function openQuickSacSettingsPopup(targetId) {
 
 function handleQuickSacClick(targetId) {
   if (stageEntered || isBattleRunning()) {
-    addLog("You cannot consume units while inside a world.");
+    showToast("You cannot consume units while inside a world.", "warning");
     return;
   }
 
   const candidates = getQuickSacCandidates(targetId);
   if (candidates.length === 0) {
-    addLog("No unlocked towers match your Quick Sac settings.");
+    showToast("No unlocked towers match your Quick Sac settings.", "warning");
     return;
   }
 
@@ -5117,7 +6588,11 @@ function startWave() {
   if (isBattleRunning()) return;
 
   if (baseHealth <= 0) {
-    addLog("Your base has been destroyed. Select a stage to retry.");
+    showToast(
+      "Your base has been destroyed. Select a stage to retry.",
+      "warning",
+      2500,
+    );
     return;
   }
 
@@ -5126,8 +6601,10 @@ function startWave() {
   const stage = getSelectedStage();
 
   if (wave >= stage.waves.length) {
-    addLog(
+    showToast(
       `Stage ${stage.id} is already cleared. Select another stage or replay it.`,
+      "warning",
+      2500,
     );
     return;
   }
@@ -5147,12 +6624,16 @@ function startWave() {
   }
 }
 
-function exitStage() {
+async function exitStage() {
   if (!stageEntered && !isBattleRunning()) return;
 
-  const confirmed = confirm(
-    "Are you sure you want to exit this world? Any progress in an active wave will be reset.",
-  );
+  const confirmed = await showGameModal({
+    title: "Exit Stage?",
+    message: "Any progress in the current wave will be lost.",
+    type: "warning",
+    confirmText: "Exit Stage",
+    cancelText: "Stay",
+  });
 
   if (!confirmed) return;
 
@@ -5467,6 +6948,13 @@ function handleStageDefeat() {
   startWaveAvailable = false;
 
   enemyStatus.textContent = `Defeated on Stage ${stage.id}. You can retry when ready.`;
+  addLog("☠️ DEFEAT: Your base was destroyed!");
+  showGameModal({
+    title: "💀 Base Destroyed!",
+    message: `You were defeated on Stage ${stage.id}.\nStage progress was not saved.`,
+    type: "danger",
+    confirmText: "Return to Base",
+  });
 
   saveCampaignProgress();
   updateUI();
@@ -5780,32 +7268,18 @@ function updateUI() {
     baseHealthDisplay.textContent = `${baseHealth} / ${maxBaseHealth}`;
   if (waveDisplay) waveDisplay.textContent = `${selectedStageId}`;
 
-  const extraMainSlots =
-    typeof getTechExtraMainSlots === "function" ? getTechExtraMainSlots() : 0;
-  const totalMaxSlots = maxDeployedUnits + extraMainSlots + maxBaseSlots;
+  const maxMainSlots = getMaxDeployedUnits();
+  const extraBaseSlots =
+    typeof getTechExtraBaseSlots === "function" ? getTechExtraBaseSlots() : 0;
+  const totalMaxSlots = maxMainSlots + maxBaseSlots + extraBaseSlots;
   const totalDeployed = getDeployedCount() + getDeployedBaseCount();
-  if (activeSlotsDisplay)
+  if (activeSlotsDisplay) {
     activeSlotsDisplay.textContent = `${totalDeployed} / ${totalMaxSlots}`;
+  }
+  updateDeploymentCount();
 
   if (typeof renderTechTree === "function") {
     renderTechTree();
-  }
-
-  if (damageLevelDisplay) {
-    const deployed = [...deployedUnits, ...deployedBaseUnits].filter(
-      (u) => u !== null,
-    );
-    if (deployed.length > 0) {
-      damageLevelDisplay.textContent = Math.max(
-        ...deployed.map((u) => u.level),
-      );
-    } else {
-      const all = [...inventory, ...deployedUnits, ...deployedBaseUnits].filter(
-        (u) => u !== null,
-      );
-      damageLevelDisplay.textContent =
-        all.length > 0 ? Math.max(...all.map((u) => u.level)) : 1;
-    }
   }
 
   if (baseHealthDisplay) {
@@ -5882,6 +7356,15 @@ function updateUI() {
 }
 
 // Event Listeners Setup
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    touchLastPlayedTimestamp();
+  }
+});
+
+window.addEventListener("pagehide", touchLastPlayedTimestamp);
+window.addEventListener("beforeunload", touchLastPlayedTimestamp);
+
 buyUnitButton?.addEventListener("click", () => buyRandomUnit("Main"));
 buyUnit10xButton?.addEventListener("click", () => buyRandomUnit("Main", 10));
 buyRearUnitButton?.addEventListener("click", () => buyRandomUnit("Rear"));
@@ -5890,12 +7373,19 @@ buyRearUnit10xButton?.addEventListener("click", () =>
 );
 startWaveButton?.addEventListener("click", startWave);
 
-resetStorageButton?.addEventListener("click", () => {
-  const confirmed = confirm(
-    `Are you sure you want to reset Save Slot ${currentSaveSlot}? All progress in this slot will be lost.`,
-  );
+resetStorageButton?.addEventListener("click", async () => {
+  const confirmed = await showGameModal({
+    title: "Reset Save Slot?",
+    message: `Are you sure you want to reset Save Slot ${currentSaveSlot}? This cannot be undone.`,
+    type: "danger",
+    confirmText: "Reset Save",
+    cancelText: "Cancel",
+  });
   if (!confirmed) return;
+
+  cancelPendingSave();
   localStorage.removeItem(getSaveKey(currentSaveSlot));
+  localStorage.removeItem(getPresetKey(currentSaveSlot));
   location.reload();
 });
 
@@ -5909,7 +7399,11 @@ saveMenuBtn?.addEventListener("click", (e) => {
 loadMenuBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
   if (stageEntered || isBattleRunning()) {
-    addLog("Cannot switch save slots while inside a world.");
+    showToast(
+      "Cannot switch save slots while inside a world.",
+      "warning",
+      2500,
+    );
     return;
   }
   const isHidden = loadMenu?.classList.contains("hidden");
@@ -5917,11 +7411,145 @@ loadMenuBtn?.addEventListener("click", (e) => {
   if (isHidden) loadMenu?.classList.remove("hidden");
 });
 
+importExportBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const raw = await showGameModal({
+      title: "Global Save Import / Export",
+      message:
+        "Copy your global save code below to back up all slots, or paste a save code and click Import:",
+      type: "info",
+      inputValue: exportGlobalSaveData(),
+      inputPlaceholder: "Paste global save code here...",
+      showCopy: true,
+      confirmText: "Import",
+      cancelText: "Close",
+    });
+
+    if (raw === null) return;
+
+    try {
+      importGlobalSaveData(raw);
+    } catch {
+      showToast("Invalid global save code.", "error", 2500);
+    }
+  });
+
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".slot-dropdown-container")) {
     closeSaveLoadMenus();
   }
 });
+
+bgImportExportBtn?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const raw = await showGameModal({
+    title: "Background Import / Export",
+    message:
+      "Copy your current background code below, paste a code and click Import, or upload an image:",
+    type: "info",
+    inputValue: liquidGlassSettings.customBg || "",
+    inputPlaceholder: "Paste background image code (data:image/...) here...",
+    showCopy: true,
+    confirmText: "Import",
+    cancelText: "Close",
+    extraButtons: [
+      {
+        text: "Upload",
+        onClick: ({ close }) => {
+          const picker = document.createElement("input");
+          picker.type = "file";
+          picker.accept = "image/*";
+          picker.addEventListener("change", async (ev) => {
+            const file = ev.target.files?.[0];
+            if (!file) return;
+            try {
+              liquidGlassSettings.customBg = await compressCustomBg(file);
+              applyLiquidGlassMode(true, liquidGlassSettings);
+              saveCampaignProgress();
+              close(null);
+              showToast("Background image uploaded!", "success", 2500);
+            } catch {
+              showToast("Failed to load image file.", "error", 2500);
+            }
+          });
+          picker.click();
+        },
+      },
+    ],
+  });
+
+  if (raw === null) return;
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    liquidGlassSettings.customBg = "";
+    applyLiquidGlassMode(liquidGlassMode, liquidGlassSettings);
+    saveCampaignProgress();
+    showToast("Custom background cleared.", "info", 2500);
+    return;
+  }
+
+  if (!isValidCustomBgDataUrl(trimmed)) {
+    showToast("Invalid background image code.", "error", 2500);
+    return;
+  }
+
+  liquidGlassSettings.customBg = trimmed;
+  applyLiquidGlassMode(true, liquidGlassSettings);
+  saveCampaignProgress();
+  showToast("Background image imported!", "success", 2500);
+});
+
+document
+  .getElementById("glass-io-btn")
+  ?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const { customBg, ...exportSettings } = liquidGlassSettings;
+
+    const raw = await showGameModal({
+      title: "Liquid Glass Import / Export",
+      message:
+        "Copy your current settings code below, or paste a code and click Import:",
+      type: "info",
+      inputValue: JSON.stringify(exportSettings),
+      inputPlaceholder: "Paste Liquid Glass JSON settings here...",
+      showCopy: true,
+      confirmText: "Import",
+      cancelText: "Close",
+    });
+
+    if (raw === null) return;
+
+    try {
+      const parsed = JSON.parse(raw.trim());
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Invalid format");
+      }
+
+      const nextSettings = {
+        ...DEFAULT_LIQUID_GLASS_SETTINGS,
+        customBg: liquidGlassSettings.customBg,
+      };
+      for (const key of Object.keys(DEFAULT_LIQUID_GLASS_SETTINGS)) {
+        if (key === "customBg") continue;
+        if (key in parsed && Number.isFinite(Number(parsed[key]))) {
+          nextSettings[key] = Number(parsed[key]);
+        }
+      }
+
+      applyLiquidGlassMode(true, nextSettings);
+      saveCampaignProgress();
+      showToast("Liquid Glass settings imported!", "success", 2500);
+    } catch {
+      showToast("Invalid Liquid Glass settings code.", "error", 2500);
+    }
+  });
 
 // Inventory Toggle Listeners
 const inventoryPanel = document.querySelector(".inventory-panel");
@@ -5931,9 +7559,33 @@ if (toggleInventoryButton && inventoryPanel) {
     const isExpanded = inventoryPanel.classList.toggle("expanded");
     document.body.classList.toggle("no-scroll", isExpanded);
     toggleInventoryButton.textContent = isExpanded ? "Collapse" : "→";
+
+    if (isExpanded) {
+      if (inventorySettings.showNewHighlight) {
+        for (const typeKey of newTowerTypes) {
+          pendingClearNewTowerTypes.add(typeKey);
+        }
+      }
+    } else if (pendingClearNewTowerTypes.size > 0) {
+      for (const typeKey of pendingClearNewTowerTypes) {
+        newTowerTypes.delete(typeKey);
+      }
+      pendingClearNewTowerTypes.clear();
+      saveCampaignProgress();
+    }
+
     renderInventory();
   });
 }
+
+document.addEventListener("keydown", (event) => {
+  if (
+    event.key === "Escape" &&
+    document.getElementById("inventory-settings-overlay")
+  ) {
+    closeInventorySettingsPopup();
+  }
+});
 
 inventoryTitleBtn?.addEventListener("click", () => {
   currentInventoryTab =
@@ -5947,6 +7599,9 @@ inventoryTitleBtn?.addEventListener("click", () => {
     inventorySortSelect.disabled = currentInventoryTab === "warehouse";
   if (inventorySortOrderButton)
     inventorySortOrderButton.disabled = currentInventoryTab === "warehouse";
+  const invSettingsBtn = document.getElementById("inventory-settings-btn");
+  if (invSettingsBtn)
+    invSettingsBtn.disabled = currentInventoryTab === "warehouse";
 
   saveCampaignProgress();
   renderInventory();
@@ -6103,6 +7758,106 @@ document
   });
 
 document
+  .getElementById("toggle-overhaul-checkbox")
+  ?.addEventListener("change", (e) => {
+    setUiOverhaulMode(e.target.checked);
+  });
+
+liquidGlassCheckbox?.addEventListener("change", (e) => {
+  applyLiquidGlassMode(e.target.checked, liquidGlassSettings);
+  saveCampaignProgress();
+});
+
+const glassSliderMap = {
+  "glass-main-opacity-slider": "mainOpacity",
+  "glass-main-blur-slider": "mainBlur",
+  "glass-unit-border-opacity-slider": "unitBorderOpacity",
+  "glass-unit-border-blur-slider": "unitBorderBlur",
+  "glass-popup-opacity-slider": "popupOpacity",
+  "glass-popup-blur-slider": "popupBlur",
+  "glass-bg-opacity-slider": "bgOpacity",
+  "glass-bg-blur-slider": "bgBlur",
+  "glass-main-border-opacity-slider": "mainBorderOpacity",
+  "glass-main-border-blur-slider": "mainBorderBlur",
+  "glass-popup-border-opacity-slider": "popupBorderOpacity",
+  "glass-popup-border-blur-slider": "popupBorderBlur",
+  "glass-hue-slider": "hue",
+  "glass-saturation-slider": "saturation",
+  "glass-tint-slider": "tint",
+  "glass-gloss-slider": "gloss",
+  "glass-custom-bg-blur-slider": "customBgBlur",
+};
+
+for (const [sliderId, settingKey] of Object.entries(glassSliderMap)) {
+  document.getElementById(sliderId)?.addEventListener("input", (e) => {
+    liquidGlassSettings[settingKey] = Number(e.target.value);
+    if (glassSliderRafId === null) {
+      glassSliderRafId = requestAnimationFrame(() => {
+        glassSliderRafId = null;
+        applyLiquidGlassMode(liquidGlassMode, liquidGlassSettings);
+        saveCampaignProgress();
+      });
+    }
+  });
+}
+
+document
+  .getElementById("reset-liquid-glass-btn")
+  ?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    applyLiquidGlassMode(liquidGlassMode, { ...DEFAULT_LIQUID_GLASS_SETTINGS });
+    saveCampaignProgress();
+  });
+
+document
+  .getElementById("glass-io-btn")
+  ?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const { customBg, ...exportSettings } = liquidGlassSettings;
+
+    const raw = await showGameModal({
+      title: "Liquid Glass Import / Export",
+      message:
+        "Copy your current settings code below, or paste a code and click Import:",
+      type: "info",
+      inputValue: JSON.stringify(exportSettings),
+      inputPlaceholder: "Paste Liquid Glass JSON settings here...",
+      showCopy: true,
+      confirmText: "Import",
+      cancelText: "Close",
+    });
+
+    if (raw === null) return;
+
+    try {
+      const parsed = JSON.parse(raw.trim());
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Invalid format");
+      }
+
+      const nextSettings = {
+        ...DEFAULT_LIQUID_GLASS_SETTINGS,
+        customBg: liquidGlassSettings.customBg,
+      };
+      for (const key of Object.keys(DEFAULT_LIQUID_GLASS_SETTINGS)) {
+        if (key === "customBg") continue;
+        if (key in parsed && Number.isFinite(Number(parsed[key]))) {
+          nextSettings[key] = Number(parsed[key]);
+        }
+      }
+
+      applyLiquidGlassMode(true, nextSettings);
+      saveCampaignProgress();
+      showToast("Liquid Glass settings imported!", "success", 2500);
+    } catch {
+      showToast("Invalid Liquid Glass settings code.", "error", 2500);
+    }
+  });
+
+document
   .getElementById("toggle-show-more-stats-checkbox")
   ?.addEventListener("change", (e) => setShowMoreStats(e.target.checked));
 
@@ -6160,6 +7915,8 @@ function initializeGame() {
   }
 
   addLog(`Welcome back, Commander. (Active Slot: ${currentSaveSlot})`);
+  openWelcomeBackModal();
+  touchLastPlayedTimestamp();
 }
 
 // Start Game Engine

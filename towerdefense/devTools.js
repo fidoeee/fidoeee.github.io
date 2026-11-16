@@ -22,15 +22,16 @@ if (typeof getRandomUnitTypeByCategory === "function") {
 /**
  * Fast-forwards campaign progression to a target world and stage.
  * Uses native getStageRewardMultiplier for clear decay (hits 15% floor on reruns),
- * drains ST completely on shop pulls, and scales XP with dual placeholders.
+ * optionally drains ST on shop pulls, and scales XP with dual placeholders.
  *
  * @param {number} targetWorld - Target world number (1 to 10).
  * @param {number} [targetStageNum=1] - Target stage number (1 to 10).
  * @param {number} [clearsPerStage=10] - Number of clears per stage.
  * @param {number} [xpMultiplier=1.0] - Manual XP multiplier.
  * @param {boolean} [clearRange=true] - If true, clears all stages leading to target. If false, clears ONLY target stage.
+ * @param {boolean} [buildTowers=false] - If true, spends earned Gold and ST on shop pulls.
  */
-function devSpeedrun(targetWorld, targetStageNum = 1, clearsPerStage = 10, xpMultiplier = 1.0, clearRange = true) {
+function devSpeedrun(targetWorld, targetStageNum = 1, clearsPerStage = 10, xpMultiplier = 1.0, clearRange = true, buildTowers = false) {
     if (typeof targetWorld !== "number" || targetWorld < 1 || targetWorld > 10) {
         console.error("[DevSpeedrun] Target world must be a number between 1 and 10.");
         return;
@@ -110,7 +111,12 @@ function devSpeedrun(targetWorld, targetStageNum = 1, clearsPerStage = 10, xpMul
     };
 
     const advanceSimPlaceholder = (placeholder, enemyLevel) => {
-        const xpGained = Math.round(calculateSimWaveXp(enemyLevel, placeholder.level) * xpMult);
+        const techXpMult = typeof getTechWaveExpMultiplier === "function"
+            ? getTechWaveExpMultiplier()
+            : 1;
+        const xpGained = Math.round(
+            calculateSimWaveXp(enemyLevel, placeholder.level) * xpMult * techXpMult
+        );
         placeholder.xp += xpGained;
         placeholder.totalXpEarned += xpGained;
         while (placeholder.xp >= getRequiredXp(placeholder)) {
@@ -188,11 +194,11 @@ function devSpeedrun(targetWorld, targetStageNum = 1, clearsPerStage = 10, xpMul
     }
     autoBuyTechMilestones();
 
-    // --- 2. GACHA PULL LOOP (Drains ST completely) ---
+    // --- 2. GACHA PULL LOOP (Drains ST completely if buildTowers is true) ---
     let goldSpent = 0;
     let successfulPulls = 0;
 
-    if (typeof buyRandomUnit === "function") {
+    if (buildTowers && typeof buyRandomUnit === "function") {
         while (true) {
             const rearUnlocked = typeof isRearBuildUnlocked === "function" && isRearBuildUnlocked();
             let buyRear = rearUnlocked && (successfulPulls % 3 === 2);
@@ -268,6 +274,16 @@ function devSpeedrun(targetWorld, targetStageNum = 1, clearsPerStage = 10, xpMul
 
     addLog(`🚀 Speedran ${rangeText} (${runsCount} run(s)/stage).`);
     addLog(`💰 Earned: +${totalAccumulatedGold.toLocaleString()} Gold, +${totalAccumulatedST} ST.`);
-    addLog(`🛒 Spent ${goldSpent.toLocaleString()} Gold on ${successfulPulls} shop pulls. Leftover ST: ${st}.`);
-    addLog(`📈 Existing units gained up to Lv.${simExistingMain.level} (Main) / Lv.${simExistingRear.level} (Rear). New pulls gained up to Lv.${simNewMain.level} (Main) / Lv.${simNewRear.level} (Rear).`);
+
+    if (buildTowers) {
+        addLog(`🛒 Spent ${goldSpent.toLocaleString()} Gold on ${successfulPulls} shop pulls. Leftover ST: ${st}.`);
+    } else {
+        addLog(`🛒 Skipped shop pulls (buildTowers = false). Current ST: ${st}.`);
+    }
+
+    if (successfulPulls > 0) {
+        addLog(`📈 Existing units gained up to Lv.${simExistingMain.level} (Main) / Lv.${simExistingRear.level} (Rear). New pulls gained up to Lv.${simNewMain.level} (Main) / Lv.${simNewRear.level} (Rear).`);
+    } else {
+        addLog(`📈 Existing units gained up to Lv.${simExistingMain.level} (Main) / Lv.${simExistingRear.level} (Rear).`);
+    }
 }
