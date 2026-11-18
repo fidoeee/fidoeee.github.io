@@ -8,7 +8,7 @@ const STAT_SCALERS = {
 };
 
 const enemyTypes = {
-  // --- BASIC & SWARM UNITS ---
+  // --- BASIC & SWARM UNITS (Unchanged) ---
   flood_drone: {
     name: "Swarm Drone",
     health: 1.1,
@@ -50,18 +50,18 @@ const enemyTypes = {
     name: "Combat Medic",
     health: 120,
     speed: 1.2,
-    reward: 2,
+    reward: 1.5,
     damage: 8,
     healAmount: 25,
     healInterval: 2000,
   },
 
-  // --- SPECIALIZED MINIONS & SUPPORT ---
+  // --- SPECIALIZED MINIONS & SUPPORT (Toned down) ---
   shield_drone: {
     name: "Shield Drone",
     health: 200,
     speed: 1.5,
-    reward: 3,
+    reward: 1.5,
     damage: 12,
     armor: 50,
   },
@@ -69,18 +69,18 @@ const enemyTypes = {
     name: "Nano Repair Unit",
     health: 250,
     speed: 0.8,
-    reward: 4,
+    reward: 2,
     damage: 10,
     healAmount: 60,
     healInterval: 1500,
   },
 
-  // --- HEAVY REGENERATIVE UNITS ---
+  // --- HEAVY REGENERATIVE UNITS (Toned down) ---
   regen_unit: {
     name: "Regenerator",
     health: 450,
     speed: 0.9,
-    reward: 5,
+    reward: 2.5,
     damage: 15,
     armor: 20,
     type: "self_healer",
@@ -91,22 +91,22 @@ const enemyTypes = {
     name: "Siphon Link",
     health: 650,
     speed: 0.6,
-    reward: 8,
+    reward: 3.5,
     damage: 20,
     armor: 35,
     type: "dual_healer",
-    selfHealAmount: 80,
-    healAmount: 150,
-    healInterval: 1800,
+    selfHealAmount: 60,
+    healAmount: 100,
+    healInterval: 1500,
   },
 
-  // --- EARLY BOSSES ---
+  // --- EARLY BOSSES (Toned down) ---
   miniboss1: {
     name: "Miniboss",
     health: 6000,
     speed: 0.3,
     damage: 999,
-    reward: 10,
+    reward: 5,
     armor: 15,
   },
   miniboss: {
@@ -114,7 +114,7 @@ const enemyTypes = {
     health: 8000,
     speed: 0.5,
     damage: 999,
-    reward: 10,
+    reward: 6,
     armor: 15,
   },
   miniboss8: {
@@ -122,7 +122,7 @@ const enemyTypes = {
     health: 12000,
     speed: 0.65,
     damage: 999,
-    reward: 10,
+    reward: 7,
     armor: 40,
   },
   boss: {
@@ -130,17 +130,17 @@ const enemyTypes = {
     health: 20000,
     speed: 0.15,
     damage: 999,
-    reward: 15,
+    reward: 10,
     armor: 30,
   },
 
-  // --- MID & LATE WORLD BOSSES ---
+  // --- MID & LATE WORLD BOSSES (Toned down) ---
   juggernaut: {
     name: "Ironclad Juggernaut",
     health: 40000,
     speed: 0.15,
     damage: 999,
-    reward: 25,
+    reward: 15,
     armor: 85,
   },
   blitz_boss: {
@@ -148,7 +148,7 @@ const enemyTypes = {
     health: 36000,
     speed: 0.7,
     damage: 999,
-    reward: 30,
+    reward: 18,
     armor: 10,
   },
   siphon_boss: {
@@ -156,7 +156,7 @@ const enemyTypes = {
     health: 70000,
     speed: 0.25,
     damage: 999,
-    reward: 35,
+    reward: 20,
     armor: 25,
     type: "dual_healer",
     selfHealAmount: 150,
@@ -168,7 +168,7 @@ const enemyTypes = {
     health: 130000,
     speed: 0.1,
     damage: 999,
-    reward: 50,
+    reward: 25,
     armor: 120,
   },
   void_colossus: {
@@ -176,7 +176,7 @@ const enemyTypes = {
     health: 190000,
     speed: 0.14,
     damage: 999,
-    reward: 75,
+    reward: 35,
     armor: 160,
   },
   apex_overlord: {
@@ -184,7 +184,7 @@ const enemyTypes = {
     health: 200000,
     speed: 0.1,
     damage: 999,
-    reward: 120,
+    reward: 50,
     armor: 220,
   },
   dread_titan: {
@@ -192,17 +192,17 @@ const enemyTypes = {
     health: 250000,
     speed: 0.08,
     damage: 999,
-    reward: 180,
+    reward: 70,
     armor: 400,
   },
 
-  // --- WORLD 10 MULTI-BOSS COMPONENTS ---
+  // --- WORLD 10 MULTI-BOSS COMPONENTS (Toned down) ---
   omega_titan_alpha: {
     name: "Omega Core Titan Alpha",
     health: 750000,
     speed: 0.03,
     damage: 999,
-    reward: 150,
+    reward: 65,
     armor: 1500,
   },
   omega_titan_beta: {
@@ -210,7 +210,7 @@ const enemyTypes = {
     health: 600000,
     speed: 0.02,
     damage: 999,
-    reward: 150,
+    reward: 65,
     armor: 7500,
   },
   omega_blitz_miniboss: {
@@ -218,7 +218,7 @@ const enemyTypes = {
     health: 50000,
     speed: 0.45,
     damage: 999,
-    reward: 100,
+    reward: 40,
     armor: 500,
   },
 

@@ -89,34 +89,13 @@ function devSpeedrun(targetWorld, targetStageNum = 1, clearsPerStage = 10, xpMul
         if (canUpgradeNode("eco_focus_pool")) buyTechNode("eco_focus_pool");
     };
 
-    const calculateSimWaveXp = (enemyLevel, towerLevel) => {
-        const baseWaveXp = 15 + enemyLevel * 5;
-        const levelDiff = enemyLevel - towerLevel;
-        let mult = 1.0;
-        
-        if (levelDiff <= 0) {
-            mult = Math.max(0.1, 1 + levelDiff * 0.05);
-        } else {
-            let effectiveDiff;
-            if (levelDiff <= 30) {
-                effectiveDiff = 26 * Math.log(1 + levelDiff / 26);
-            } else {
-                const baseAt30 = 26 * Math.log(1 + 30 / 26);
-                const slopeAt30 = 26 / 56;
-                effectiveDiff = baseAt30 + 3.0 * Math.log(1 + (slopeAt30 / 3.0) * (levelDiff - 30));
-            }
-            mult = Math.pow(1.21, effectiveDiff);
-        }
-        return Math.max(1, Math.round(baseWaveXp * mult));
-    };
-
-    const advanceSimPlaceholder = (placeholder, enemyLevel) => {
-        const techXpMult = typeof getTechWaveExpMultiplier === "function"
-            ? getTechWaveExpMultiplier()
-            : 1;
-        const xpGained = Math.round(
-            calculateSimWaveXp(enemyLevel, placeholder.level) * xpMult * techXpMult
-        );
+    const advanceSimPlaceholder = (placeholder, enemyLevel, deployedCount = 6) => {
+        const { earnedXp } = calculateUnitWaveXp({
+            enemyLevel,
+            unitLevel: placeholder.level,
+            deployedCount,
+        });
+        const xpGained = Math.round(earnedXp * xpMult);
         placeholder.xp += xpGained;
         placeholder.totalXpEarned += xpGained;
         while (placeholder.xp >= getRequiredXp(placeholder)) {

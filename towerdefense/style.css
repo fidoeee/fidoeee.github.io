@@ -2636,6 +2636,111 @@ body.no-scroll {
    10. BATTLE PANEL & TABS
    ========================================================================== */
 
+/* Normal Mode: Header with right-aligned expand button */
+.battle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.battle-header h2 {
+  margin: 0;
+}
+
+.battle-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.battle-panel:not(.expanded) .battle-focus-only,
+.battle-panel:not(.expanded) .battle-focus-drawer {
+  display: none;
+}
+
+/* Expanded Mode: Fullscreen Battle Focus */
+.battle-panel.expanded {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  z-index: 9999 !important;
+  background: #12161f !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+  padding: 20px !important;
+  border-radius: 0 !important;
+}
+
+.battle-panel.expanded .battle-view-tabs {
+  display: none !important;
+}
+
+/* Grid: Top row = persistent controls (#battle-tab), Bottom row = Enemies | Statistics */
+.battle-panel.expanded .battle-panes-container {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 12px 16px;
+}
+
+.battle-panel.expanded #battle-tab {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  grid-column: 1 / -1;
+  padding: 8px 12px;
+  background: #1a202c;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+}
+
+.battle-panel.expanded #battle-tab #enemy-status {
+  margin: 0;
+}
+
+.battle-panel.expanded #enemies-tab,
+.battle-panel.expanded #stats-tab {
+  display: flex !important;
+  flex-direction: column;
+  min-height: 0;
+  background: #1a202c;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.battle-panel.expanded .enemy-list,
+.battle-panel.expanded .stats-list {
+  max-height: none;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.battle-focus-drawer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  max-height: 38vh;
+  overflow-y: auto;
+  padding: 10px;
+  background: #171d28;
+  border: 1px solid #384253;
+  border-radius: 8px;
+}
+
+.battle-focus-drawer.hidden {
+  display: none;
+}
+
 .battle-panel h2 {
   margin-bottom: 14px;
 }
@@ -2709,6 +2814,237 @@ body.no-scroll {
   accent-color: #f59e0b; /* Matches tech accent theme */
   width: 16px;
   height: 16px;
+}
+
+/* ==========================================================================
+   10.1. QUICK DEPLOY
+   ========================================================================== */
+
+/* Normal Mode: Keep workspace transparent */
+.battle-panel:not(.expanded) .battle-focus-only,
+.battle-panel:not(.expanded) .battle-campaign-drawer,
+.battle-panel:not(.expanded) .battle-deploy-sidebar {
+  display: none;
+}
+
+.battle-panel:not(.expanded) .battle-focus-workspace {
+  display: contents;
+}
+
+/* Full-width Campaign Drawer inside Battle Focus */
+.battle-campaign-drawer {
+  width: 100%;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: #171d28;
+  border: 1px solid #384253;
+  border-radius: 8px;
+}
+
+.battle-campaign-drawer.hidden {
+  display: none;
+}
+
+#battle-campaign-drawer .campaign-panel {
+  padding: 10px 14px;
+}
+
+/* Hide extra labels/details inside expanded Battle Campaign drawer */
+#battle-campaign-drawer .stage-world-label,
+#battle-campaign-drawer #mode-description-text,
+#battle-campaign-drawer #stage-details {
+  display: none;
+}
+
+#battle-campaign-drawer .campaign-tabs {
+  margin-bottom: 8px;
+}
+
+#battle-campaign-drawer .world-pagination {
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+
+/* Workspace: Left Slide-Out Mini-Deploy + Right Battle Grid */
+.battle-panel.expanded .battle-focus-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+}
+
+.battle-deploy-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: #171d28;
+  border: 1px solid #2d3748;
+  border-radius: 8px;
+  padding: 10px;
+  transition: width 0.15s ease, padding 0.15s ease;
+}
+
+.battle-deploy-sidebar.collapsed {
+  width: 0;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+}
+
+/* Super-Mini Deployment Styling inside Battle Focus Sidebar */
+.battle-deploy-sidebar .deployment-panel {
+  border: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.battle-deploy-sidebar .deployment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.battle-deploy-sidebar .deployment-header h2 {
+  font-size: 0.95rem;
+  white-space: nowrap;
+  margin: 0;
+}
+
+/* Compact Presets inside narrow sidebar */
+.battle-deploy-sidebar #preset-panel {
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.battle-deploy-sidebar .preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.battle-deploy-sidebar .preset-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  background: rgba(30, 41, 59, 0.55);
+  border-radius: 6px;
+}
+
+.battle-deploy-sidebar .preset-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 22px;
+}
+
+.battle-deploy-sidebar .preset-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  flex: 1;
+}
+
+.battle-deploy-sidebar .preset-btn {
+  padding: 4px 6px;
+  font-size: 0.75rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.battle-deploy-sidebar .recall-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+}
+
+/* Vertical Slot Stack in Sidebar */
+.battle-deploy-sidebar .slots {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.battle-deploy-sidebar .slot {
+  padding: 6px 8px !important;
+  min-height: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.battle-deploy-sidebar .slot strong {
+  font-size: 0.85rem;
+}
+
+/* Hide XP bar, details text, buttons, and range info in Mini-Deploy */
+.battle-deploy-sidebar .slot p,
+.battle-deploy-sidebar .slot .xp-track,
+.battle-deploy-sidebar .slot .slot-buttons,
+.battle-deploy-sidebar .slot .range-info {
+  display: none !important;
+}
+
+/* Only style cooldown badge when shown by JS options (no !important overriding inline display:none) */
+.battle-deploy-sidebar .slot .cooldown-badge {
+  font-size: 0.78rem;
+}
+
+.slot {
+  cursor: pointer;
+}
+
+.slot:hover {
+  border-color: #63b3ed;
+}
+
+/* Slot Quick-Deploy Popup */
+.slot-deploy-card {
+  width: min(460px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slot-deploy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.slot-deploy-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #1a202c;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.slot-deploy-option.selected {
+  border-color: #63b3ed;
+  background: #233146;
+}
+
+.slot-deploy-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.slot strong + .cooldown-badge {
+  margin-top: -4px;
+  margin-bottom: -4px;
 }
 
 /* ==========================================================================

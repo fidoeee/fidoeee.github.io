@@ -96,6 +96,7 @@ let activeUnits = [];
 let tick = 0;
 let fastForwardTimer = null;
 let slowMode = false;
+let isSkippingWave = false;
 
 const NORMAL_TICK_DELAY = 100;
 const SLOW_TICK_DELAY = 500;
@@ -208,11 +209,12 @@ function enemyMovement() {
     if (enemy.location >= laneEnd) {
       baseHealth = Math.max(0, baseHealth - enemy.damage);
 
-      addLog(
-        `${enemy.name} Lv.${enemy.level} reached your base! ` +
-          `-${enemy.damage} base health.`,
-        true, // Marked as minor log
-      );
+      if (!fastForward && !isSkippingWave) {
+        addLog(
+          `${target.name} Lv.${target.level} defeated! +${bounty} gold.`,
+          true,
+        );
+      }
 
       if (baseHealth <= 0) {
         handleGameOver();
@@ -360,8 +362,13 @@ function towerDamage() {
           typeof getTechGoldMultiplier === "function"
             ? getTechGoldMultiplier()
             : 1;
+        const fatigueMultiplier =
+          typeof getFatigueRewardMultiplier === "function"
+            ? getFatigueRewardMultiplier()
+            : 1;
 
-        const exactBounty = rawBounty * stageMultiplier * techMultiplier;
+        const exactBounty =
+          rawBounty * stageMultiplier * techMultiplier * fatigueMultiplier;
         const baseBounty = Math.floor(exactBounty);
         const remainder = exactBounty - baseBounty;
 
@@ -433,6 +440,16 @@ function refreshBattleUI() {
   updateBacklineCooldownDisplay(); // <--- Updates backline CD ticks each tick
 
   if (currentBattleTab === "stats") {
+    renderStatsList();
+  }
+  const isBattleExpanded = document
+    .querySelector(".battle-panel")
+    ?.classList.contains("expanded");
+
+  if (currentBattleTab === "enemies" || isBattleExpanded) {
+    renderEnemyList();
+  }
+  if (currentBattleTab === "stats" || isBattleExpanded) {
     renderStatsList();
   }
 }
@@ -602,6 +619,7 @@ function stopBattle() {
   }
 
   fastForward = false;
+  isSkippingWave = false;
   enemies = [];
   activeUnits = [];
 
@@ -747,24 +765,26 @@ function toggleFastForward() {
 function skipCurrentWave() {
   if (battleLoop === null || isStoppingBattle) return;
 
-  // 1. Stop the worker timer so it doesn't dispatch extra ticks mid-simulation
   gameTicker.postMessage({ action: "stop" });
   battleLoop = null;
   fastForward = false;
+  isSkippingWave = true;
 
-  // 2. Synchronously process all remaining ticks in a single main-thread execution
-  let safetyLimit = 10000; // Safety cap to prevent infinite loops
-  while (
-    enemies.length > 0 &&
-    baseHealth > 0 &&
-    !isStoppingBattle &&
-    safetyLimit > 0
-  ) {
-    battleTick(false);
-    safetyLimit--;
+  try {
+    let safetyLimit = 10000;
+    while (
+      enemies.length > 0 &&
+      baseHealth > 0 &&
+      !isStoppingBattle &&
+      safetyLimit > 0
+    ) {
+      battleTick(false);
+      safetyLimit--;
+    }
+  } finally {
+    isSkippingWave = false;
   }
 
-  // 3. Force an immediate screen render showing the end-of-wave state
   refreshBattleUI();
 }
 

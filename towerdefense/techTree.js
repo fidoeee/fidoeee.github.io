@@ -18,7 +18,8 @@ const challengeBonusNodes = {
     id: "cb_reload_speed",
     name: "Flat Fire Rate",
     costPerLevel: (lvl) => 1 + Math.floor(lvl / 10),
-    getDescription: (lvl) => `All towers +${(lvl * 0.01).toFixed(2)} fire rate.`,
+    getDescription: (lvl) =>
+      `All towers +${(lvl * 0.01).toFixed(2)} fire rate.`,
   },
 };
 
@@ -118,23 +119,23 @@ const techNodes = {
     id: "eco_gold",
     name: "Scavenger Crew",
     category: "Eco",
-    costBase: 400,
+    costBase: 250,
     costMultiplier: 3,
     maxLevel: 5,
     requiresNode: null,
-    getBonus: (lvl) => lvl * 0.1,
+    getBonus: (lvl) => lvl * 0.2,
     getDescription: (lvl) => {
-      if (lvl >= 5) return "+50% gold rewards (Maxed)";
+      if (lvl >= 5) return "+100% gold rewards (Maxed)";
       const nextLvl = lvl + 1;
-      const total = nextLvl * 10;
-      return `+${total}% gold rewards (+10%)`;
+      const total = nextLvl * 20;
+      return `+${total}% gold rewards (+20%)`;
     },
   },
- eco_discount: {
+  eco_discount: {
     id: "eco_discount",
     name: "Modular Upgrades",
     category: "Eco",
-    costBase: 800,
+    costBase: 750,
     costMultiplier: 3.0,
     costMultiplier1: 2.0,
     costMultLevel1: 3,
@@ -142,12 +143,13 @@ const techNodes = {
     requiresNode: "eco_gold",
     getBonus: (lvl) => {
       const techLvl = Math.min(5, Math.max(0, lvl));
-      const base = 3.5 - techLvl * 0.136;
-      return Number(Math.max(2.82, base).toFixed(2));
+      const base = 3.5 - techLvl * 0.15;
+      return Number(Math.max(2.75, base).toFixed(2));
     },
     getDescription: (lvl) => {
       const techLvl = Math.min(5, Math.max(0, lvl));
-      const getBaseAt = (l) => Number(Math.max(2.82, 3.5 - l * 0.136).toFixed(2));
+      const getBaseAt = (l) =>
+        Number(Math.max(2.75, 3.5 - l * 0.15).toFixed(2));
       const currentBase = getBaseAt(techLvl);
       if (techLvl >= 5)
         return `Merge cost scaling: ${currentBase.toFixed(2)}^x (Maxed)`;
@@ -235,7 +237,8 @@ const techNodes = {
     getBonus: (lvl) => lvl,
     getDescription: (lvl) => {
       if (lvl >= 5) return "Unlocked Tier 5 Mythic arsenal pool (MAX)";
-      if (lvl === 4) return "Unlocks Tier 5 Mythic arsenal pool (Stage 6-10 + 2 Legendary Towers)";
+      if (lvl === 4)
+        return "Unlocks Tier 5 Mythic arsenal pool (Stage 6-10 + 2 Legendary Towers)";
       if (lvl === 3) return "Unlocks Tier 4 high-tech arsenal (Stage 4-10)";
       if (lvl === 2) return "Unlocks Tier 3 heavy weapons (Stage 3-10)";
       if (lvl === 1) return "Unlocks Tier 2 specialized turrets (Stage 2-10)";
@@ -249,12 +252,12 @@ const techNodes = {
     costBase: 1500,
     costMultiplier: 1.0,
     maxLevel: 1,
-    requiresNode: "eco_pool", 
+    requiresNode: "eco_pool",
     requiresStage: "3-1",
     getBonus: (lvl) => lvl,
     getDescription: (lvl) =>
-      lvl >= 1 
-        ? "Targeted tower focusing unlocked (Maxed)" 
+      lvl >= 1
+        ? "Targeted tower focusing unlocked (Maxed)"
         : "Unlocks tower build focus",
   },
 
@@ -267,7 +270,7 @@ const techNodes = {
     costMultiplier: 3,
     maxLevel: 3,
     requiresNode: null,
-    getBonus: (lvl) => lvl * 0.20,
+    getBonus: (lvl) => lvl * 0.2,
     getDescription: (lvl) => {
       if (lvl >= 3) return "All towers +60% global damage (Maxed)";
       const nextLvl = lvl + 1;
@@ -356,7 +359,11 @@ const techNodes = {
     maxLevel: 1,
     requiresStage: "10-10",
     customCheck: (lvl) => {
-      if (typeof techNodes === "undefined" || typeof techUpgrades === "undefined") return true;
+      if (
+        typeof techNodes === "undefined" ||
+        typeof techUpgrades === "undefined"
+      )
+        return true;
 
       // Verifies that every other tech node in the tree is fully maxed out
       for (const key in techNodes) {
@@ -445,34 +452,40 @@ function getTechNodeLevel(nodeId) {
 function getTechNodeCost(nodeId) {
   const node = techNodes[nodeId];
   if (!node) return 0;
-  
+
   // Assumes currentLvl represents the number of upgrades already bought (Level 1 = 0)
-  const currentLvl = typeof getTechNodeLevel === "function" ? getTechNodeLevel(nodeId) : 0;
-  
-  if (node.costMultiplier1 !== undefined || node.costMultiplier2 !== undefined) {
+  const currentLvl =
+    typeof getTechNodeLevel === "function" ? getTechNodeLevel(nodeId) : 0;
+
+  if (
+    node.costMultiplier1 !== undefined ||
+    node.costMultiplier2 !== undefined
+  ) {
     const level1 = node.costMultLevel1 || 0;
     // If there is no second threshold, set it to Infinity so middleLevels handles everything else
-    const level2 = node.costMultLevel2 !== undefined ? node.costMultLevel2 : Infinity;
-    
+    const level2 =
+      node.costMultLevel2 !== undefined ? node.costMultLevel2 : Infinity;
+
     const earlyLevels = Math.min(currentLvl, level1);
     const middleLevels = Math.min(
       Math.max(currentLvl - level1, 0),
-      level2 - level1
+      level2 - level1,
     );
-    const laterLevels = level2 !== Infinity ? Math.max(currentLvl - level2, 0) : 0;
-    
+    const laterLevels =
+      level2 !== Infinity ? Math.max(currentLvl - level2, 0) : 0;
+
     const mult0 = node.costMultiplier || 1;
     const mult1 = node.costMultiplier1 || mult0;
     const mult2 = node.costMultiplier2 || mult1;
-    
+
     return Math.round(
       node.costBase *
         Math.pow(mult0, earlyLevels) *
         Math.pow(mult1, middleLevels) *
-        Math.pow(mult2, laterLevels)
+        Math.pow(mult2, laterLevels),
     );
   }
-  
+
   // Fallback for standard exponential nodes
   return Math.round(node.costBase * Math.pow(node.costMultiplier, currentLvl));
 }
@@ -741,7 +754,7 @@ function buyChallengeBonus(nodeId) {
   saveCampaignProgress();
   updateUI();
   renderTechTree();
-  renderDeployment(); 
+  renderDeployment();
 }
 
 function refundChallengeBonus(nodeId) {

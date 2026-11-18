@@ -9,7 +9,9 @@ const PRESETS_SAVE_KEY = "turretDefensePresetsV1";
 
 const CUSTOM_ALPHABET = (() => {
   const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-".split("");
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-".split(
+      "",
+    );
   let seed = 13374209;
   for (let i = chars.length - 1; i > 0; i--) {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -122,7 +124,7 @@ let showMoreStats = false;
 let showTechBonus = false;
 let showEffectiveDamage = false;
 let buildAnimationMode = "full"; // "full" | "short" | "off"
-let uiOverhaulMode = true;
+let uiOverhaulMode = false;
 
 const DEFAULT_LIQUID_GLASS_SETTINGS = {
   mainOpacity: 25,
@@ -260,7 +262,7 @@ const saveMenuBtn = document.getElementById("save-menu-btn");
 const loadMenuBtn = document.getElementById("load-menu-btn");
 const saveMenu = document.getElementById("save-menu");
 const loadMenu = document.getElementById("load-menu");
-const importExportBtn = document.getElementById("global-save-io-btn")
+const importExportBtn = document.getElementById("global-save-io-btn");
 
 // Options Modal Elements
 const optionsModalOverlay = document.getElementById("options-modal-overlay");
@@ -358,9 +360,7 @@ function encodeCustomSave(jsonString) {
     out += CUSTOM_ALPHABET[b1 >> 2];
     out += CUSTOM_ALPHABET[((b1 & 3) << 4) | (b2 >> 4)];
     out +=
-      i + 1 < bytes.length
-        ? CUSTOM_ALPHABET[((b2 & 15) << 2) | (b3 >> 6)]
-        : "";
+      i + 1 < bytes.length ? CUSTOM_ALPHABET[((b2 & 15) << 2) | (b3 >> 6)] : "";
     out += i + 2 < bytes.length ? CUSTOM_ALPHABET[b3 & 63] : "";
   }
   return `TD1.${out}.${computeSaveChecksum(out)}`;
@@ -432,7 +432,10 @@ function importGlobalSaveData(rawString) {
 
   for (let slot = 1; slot <= 3; slot++) {
     if (parsed.slots[slot]) {
-      localStorage.setItem(getSaveKey(slot), JSON.stringify(parsed.slots[slot]));
+      localStorage.setItem(
+        getSaveKey(slot),
+        JSON.stringify(parsed.slots[slot]),
+      );
     } else {
       localStorage.removeItem(getSaveKey(slot));
     }
@@ -548,6 +551,7 @@ function writeCampaignToStorage(slot = currentSaveSlot, showLog = false) {
       simplifyBattleLog,
       hideMaxedTech,
       unpinTopBar,
+      uiOverhaulMode,
       liquidGlassMode,
       liquidGlassSettings,
       lastPlayedAt: Date.now(),
@@ -603,7 +607,8 @@ function loadCampaignProgress(slot = currentSaveSlot) {
     swapDeploymentLayout = saved.swapDeploymentLayout ?? false;
     simplifyBattleLog = saved.simplifyBattleLog ?? false;
     hideMaxedTech = saved.hideMaxedTech ?? false;
-    unpinTopBar = saved.unpinTopBar ?? false;
+    unpinTopBar = saved.unpinTopBar ?? true;
+    uiOverhaulMode = saved.uiOverhaulMode ?? false;
     liquidGlassMode = saved.liquidGlassMode ?? false;
     liquidGlassSettings = {
       ...DEFAULT_LIQUID_GLASS_SETTINGS,
@@ -651,6 +656,7 @@ function loadCampaignProgress(slot = currentSaveSlot) {
 
     syncOptionCheckboxes();
     setUnpinTopBar(unpinTopBar);
+    setUiOverhaulMode(uiOverhaulMode);
 
     const clearCb = document.getElementById("toggle-clear-popup-checkbox");
     if (clearCb) clearCb.checked = showClearPopup;
@@ -1085,1126 +1091,6 @@ function savePreset(index) {
 }
 
 /* ==========================================================================
-   4. HELPER & UTILITY FUNCTIONS
-   ========================================================================== */
-
-function getMaxUpgrades(unit) {
-  if (!unit) return Infinity;
-  const rarity = unit.rarity || getUnitData(unit)?.rarity || "Common";
-  const cap =
-    typeof RARITY_UPGRADE_CAPS !== "undefined"
-      ? RARITY_UPGRADE_CAPS[rarity]
-      : undefined;
-  return Number.isFinite(cap) ? cap : Infinity;
-}
-
-function isMaxUpgraded(unit) {
-  if (!unit) return false;
-  return (unit.upgradeCount ?? 0) >= getMaxUpgrades(unit);
-}
-
-function setUiOverhaulMode(enabled) {
-  uiOverhaulMode = Boolean(enabled);
-  document.body.classList.toggle("ui-overhaul", uiOverhaulMode);
-}
-
-function isValidCustomBgDataUrl(str) {
-  return (
-    typeof str === "string" &&
-    /^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,[A-Za-z0-9+/=]+$/i.test(
-      str.trim(),
-    )
-  );
-}
-
-function formatFrostTier(val) {
-  if (val <= 30) return "Clear";
-  if (val <= 70) return "Balanced";
-  return "Frosted";
-}
-
-function compressCustomBg(
-  file,
-  maxWidth = 1920,
-  maxHeight = 1080,
-  quality = 0.82,
-) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to read image"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Invalid image file"));
-      img.onload = () => {
-        let { width, height } = img;
-        const scale = Math.min(1, maxWidth / width, maxHeight / height);
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // WebP is smaller & faster; falls back to JPEG automatically if unsupported
-        resolve(canvas.toDataURL("image/webp", quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-const customBgInput = document.getElementById("glass-custom-bg-input");
-const customBgClear = document.getElementById("glass-custom-bg-clear");
-
-if (customBgInput) {
-  customBgInput.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const compressedDataUrl = await compressCustomBg(file);
-      liquidGlassSettings.customBg = compressedDataUrl;
-      applyLiquidGlassMode(true, liquidGlassSettings);
-      saveCampaignProgress();
-    } catch (err) {
-      console.error("Custom background error:", err);
-    } finally {
-      customBgInput.value = "";
-    }
-  });
-}
-
-if (customBgClear) {
-  customBgClear.addEventListener("click", () => {
-    liquidGlassSettings.customBg = "";
-    applyLiquidGlassMode(liquidGlassMode, liquidGlassSettings);
-    saveCampaignProgress();
-  });
-}
-
-function applyLiquidGlassMode(enabled, settings = liquidGlassSettings) {
-  liquidGlassMode = Boolean(enabled);
-  liquidGlassSettings = {
-    customBg: isValidCustomBgDataUrl(settings.customBg)
-      ? settings.customBg.trim()
-      : "",
-    customBgBlur: Math.max(0, Math.min(30, Number(settings.customBgBlur) ?? 0)),
-    mainOpacity: Math.max(0, Math.min(100, Number(settings.mainOpacity) ?? 25)),
-    mainBlur: Math.max(0, Math.min(30, Number(settings.mainBlur) ?? 8)),
-    unitBorderOpacity: Math.max(
-      0,
-      Math.min(100, Number(settings.unitBorderOpacity) ?? 75),
-    ),
-    unitBorderBlur: Math.max(
-      0,
-      Math.min(24, Number(settings.unitBorderBlur) ?? 8),
-    ),
-    popupOpacity: Math.max(
-      0,
-      Math.min(100, Number(settings.popupOpacity) ?? 35),
-    ),
-    popupBlur: Math.max(0, Math.min(30, Number(settings.popupBlur) ?? 12)),
-    bgOpacity: Math.max(0, Math.min(100, Number(settings.bgOpacity) ?? 30)),
-    bgBlur: Math.max(0, Math.min(30, Number(settings.bgBlur) ?? 0)),
-    mainBorderOpacity: Math.max(
-      0,
-      Math.min(100, Number(settings.mainBorderOpacity) ?? 20),
-    ),
-    mainBorderBlur: Math.max(
-      0,
-      Math.min(24, Number(settings.mainBorderBlur) ?? 4),
-    ),
-    popupBorderOpacity: Math.max(
-      0,
-      Math.min(100, Number(settings.popupBorderOpacity) ?? 35),
-    ),
-    popupBorderBlur: Math.max(
-      0,
-      Math.min(24, Number(settings.popupBorderBlur) ?? 8),
-    ),
-    hue: Math.max(0, Math.min(360, Number(settings.hue) ?? 215)),
-    saturation: Math.max(0, Math.min(100, Number(settings.saturation) ?? 0)),
-    tint: Math.max(0, Math.min(100, Number(settings.tint) ?? 0)),
-    gloss: Math.max(0, Math.min(100, Number(settings.gloss) ?? 50)),
-  };
-
-  const s = liquidGlassSettings;
-  document.body.classList.toggle("liquid-glass", liquidGlassMode);
-  document.body.style.setProperty(
-    "--glass-main-alpha",
-    (s.mainOpacity / 100).toFixed(2),
-  );
-  document.body.style.setProperty("--glass-main-blur", `${s.mainBlur}px`);
-  document.body.style.setProperty(
-    "--glass-unit-border-alpha",
-    (s.unitBorderOpacity / 100).toFixed(2),
-  );
-  document.body.style.setProperty(
-    "--glass-unit-border-blur",
-    `${s.unitBorderBlur}px`,
-  );
-  document.body.style.setProperty(
-    "--glass-popup-alpha",
-    (s.popupOpacity / 100).toFixed(2),
-  );
-  document.body.style.setProperty("--glass-popup-blur", `${s.popupBlur}px`);
-  document.body.style.setProperty(
-    "--glass-bg-alpha",
-    (s.bgOpacity / 100).toFixed(2),
-  );
-  document.body.style.setProperty("--glass-bg-blur", `${s.bgBlur}px`);
-  document.body.style.setProperty(
-    "--glass-main-border-alpha",
-    (s.mainBorderOpacity / 100).toFixed(2),
-  );
-  document.body.style.setProperty(
-    "--glass-main-border-blur",
-    `${s.mainBorderBlur}px`,
-  );
-  document.body.style.setProperty(
-    "--glass-popup-border-alpha",
-    (s.popupBorderOpacity / 100).toFixed(2),
-  );
-  document.body.style.setProperty(
-    "--glass-popup-border-blur",
-    `${s.popupBorderBlur}px`,
-  );
-  document.body.style.setProperty("--glass-hue", `${s.hue}deg`);
-  document.body.style.setProperty("--glass-saturation", `${s.saturation}%`);
-  document.body.style.setProperty("--glass-tint", `${s.tint}%`);
-  document.body.style.setProperty("--glass-gloss", (s.gloss / 100).toFixed(2));
-  document.body.style.setProperty(
-    "--glass-custom-bg",
-    s.customBg ? `url("${s.customBg}")` : "none",
-  );
-  document.body.style.setProperty(
-    "--glass-custom-bg-blur",
-    `${s.customBgBlur}px`,
-  );
-
-  document.body.classList.toggle(
-    "glass-no-main-blur",
-    liquidGlassMode && s.mainBlur === 0,
-  );
-  document.body.classList.toggle(
-    "glass-no-popup-blur",
-    liquidGlassMode && s.popupBlur === 0,
-  );
-
-  if (liquidGlassCheckbox) {
-    liquidGlassCheckbox.checked = liquidGlassMode;
-  }
-
-  const slidersWrap = document.getElementById("liquid-glass-sliders");
-  if (slidersWrap) {
-    slidersWrap.hidden = !liquidGlassMode;
-  }
-
-  const sliderBindings = [
-    ["glass-main-opacity", s.mainOpacity, "%"],
-    ["glass-main-blur", s.mainBlur, "px"],
-    ["glass-unit-border-opacity", s.unitBorderOpacity, "%"],
-    ["glass-unit-border-blur", s.unitBorderBlur, "px"],
-    ["glass-popup-opacity", s.popupOpacity, "%"],
-    ["glass-popup-blur", s.popupBlur, "px"],
-    ["glass-bg-opacity", s.bgOpacity, "%"],
-    ["glass-bg-blur", s.bgBlur, "px"],
-    ["glass-main-border-opacity", s.mainBorderOpacity, "%"],
-    ["glass-main-border-blur", s.mainBorderBlur, "px"],
-    ["glass-popup-border-opacity", s.popupBorderOpacity, "%"],
-    ["glass-popup-border-blur", s.popupBorderBlur, "px"],
-    ["glass-hue", s.hue, "°"],
-    ["glass-saturation", s.saturation, "%"],
-    ["glass-tint", s.tint, "%"],
-    ["glass-gloss", s.gloss, "%"],
-    ["glass-custom-bg-blur", s.customBgBlur, "px"],
-  ];
-
-  for (const [prefix, val, unit] of sliderBindings) {
-    const input = document.getElementById(`${prefix}-slider`);
-    const badge = document.getElementById(`${prefix}-value`);
-    if (input) input.value = String(val);
-    if (badge) badge.textContent = `${val}${unit}`;
-  }
-}
-
-function formatTimeAway(ms) {
-  if (!Number.isFinite(ms) || ms < 60000) return "Just now";
-
-  const totalMinutes = Math.floor(ms / 60000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-
-  const parts = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0 && days === 0) parts.push(`${minutes}m`);
-
-  return `${parts.join(" ")} ago`;
-}
-
-function openWelcomeBackModal() {
-  document.getElementById("welcome-back-overlay")?.remove();
-
-  const savedRaw = JSON.parse(
-    localStorage.getItem(getSaveKey(currentSaveSlot)) || "null",
-  );
-  const savedTime = savedRaw?.lastPlayedAt ?? savedRaw?.timestamp ?? null;
-
-  const now = new Date();
-  const formattedClock = now.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const formattedDate = now.toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-
-  const timeAwayText = savedTime
-    ? `Last active: ${formatTimeAway(Date.now() - savedTime)}`
-    : "Fresh Command Session";
-
-  const allTowers = [
-    ...inventory,
-    ...deployedUnits.filter((u) => u !== null),
-    ...deployedBaseUnits.filter((u) => u !== null),
-  ];
-  const peakLevel =
-    allTowers.length > 0 ? Math.max(...allTowers.map((u) => u.level || 1)) : 1;
-
-  const stageLabel =
-    currentCampaignTabMode === "challenge"
-      ? `Challenge ${selectedChallengeStageId}`
-      : `Stage ${selectedStageId}`;
-
-  const overlay = document.createElement("div");
-  overlay.id = "welcome-back-overlay";
-  overlay.className = "unit-popup-overlay";
-  overlay.style.zIndex = "100002";
-
-  const modal = document.createElement("div");
-  modal.className = "unit-popup";
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
-  modal.style.maxWidth = "440px";
-  modal.style.width = "92%";
-  modal.style.borderTop = "4px solid #3b82f6";
-
-  const header = document.createElement("div");
-  header.className = "unit-popup-header";
-  header.style.alignItems = "flex-start";
-
-  const titleWrap = document.createElement("div");
-
-  const title = document.createElement("h2");
-  title.textContent = savedTime
-    ? "👋 Welcome Back, Commander!"
-    : "🛡️ Welcome, Commander!";
-  title.style.margin = "0";
-
-  const sub = document.createElement("p");
-  sub.className = "unit-popup-subtitle";
-  sub.textContent = `${formattedDate} · ${formattedClock}  |  ${timeAwayText}`;
-  sub.style.margin = "4px 0 0 0";
-
-  titleWrap.append(title, sub);
-
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "unit-popup-close";
-  closeBtn.textContent = "×";
-
-  header.append(titleWrap, closeBtn);
-
-  const grid = document.createElement("div");
-  grid.style.cssText = `
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    margin: 16px 0 20px 0;
-  `;
-
-  const stats = [
-    { label: "Active Save", value: `Slot ${currentSaveSlot}` },
-    { label: "Current Stage", value: stageLabel },
-    {
-      label: "Resources",
-      value: `${formatGameNumber(gold)} Gold · ${formatGameNumber(st)} ST`,
-    },
-    {
-      label: "Inventory",
-      value: `${inventory.length} / ${MAX_INVENTORY_CAP} (${allTowers.length} Total)`,
-    },
-    { label: "Highest Tower", value: `Level ${peakLevel}` },
-    { label: "Base Integrity", value: `${baseHealth} / ${maxBaseHealth} HP` },
-  ];
-
-  for (const item of stats) {
-    const card = document.createElement("div");
-    card.style.cssText = `
-      background: rgba(15, 23, 42, 0.55);
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 8px;
-      padding: 8px 12px;
-    `;
-
-    const lbl = document.createElement("div");
-    lbl.textContent = item.label;
-    lbl.style.fontSize = "0.75rem";
-    lbl.style.opacity = "0.75";
-
-    const val = document.createElement("div");
-    val.textContent = item.value;
-    val.style.fontWeight = "bold";
-    val.style.fontSize = "0.95rem";
-    val.style.marginTop = "2px";
-
-    card.append(lbl, val);
-    grid.appendChild(card);
-  }
-
-  const footer = document.createElement("div");
-  footer.style.display = "flex";
-  footer.style.justifyContent = "flex-end";
-
-  const continueBtn = document.createElement("button");
-  continueBtn.type = "button";
-  continueBtn.textContent = "Resume Command";
-  continueBtn.style.cssText = `
-    padding: 9px 20px;
-    font-weight: bold;
-    cursor: pointer;
-    background: #3b82f6;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-  `;
-
-  const closeModal = () => {
-    document.removeEventListener("keydown", keyHandler);
-    overlay.remove();
-  };
-
-  const keyHandler = (e) => {
-    if (e.key === "Escape" || e.key === "Enter") {
-      e.preventDefault();
-      closeModal();
-    }
-  };
-
-  closeBtn.addEventListener("click", closeModal);
-  continueBtn.addEventListener("click", closeModal);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeModal();
-  });
-  document.addEventListener("keydown", keyHandler);
-
-  footer.appendChild(continueBtn);
-  modal.append(header, grid, footer);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-  continueBtn.focus();
-}
-
-let toastTimeout = null;
-let activeToastMessage = "";
-
-function showToast(message, type = "error", duration = 2500, shouldLog = true) {
-  const isSameActiveToast =
-    toastTimeout !== null && activeToastMessage === message;
-
-  if (!isSameActiveToast && shouldLog && typeof addLog === "function") {
-    addLog(message);
-  }
-
-  const styles = {
-    error: {
-      bg: "rgba(127, 29, 29, 0.8)",
-      text: "#fca5a5dd",
-      border: "rgba(248, 113, 113, 0.7)",
-    },
-    warning: {
-      bg: "rgba(120, 53, 15, 0.7)",
-      text: "#fde68add",
-      border: "rgba(245, 158, 11, 0.6)",
-    },
-    success: {
-      bg: "rgba(20, 83, 45, 0.7)",
-      text: "#86efacdd",
-      border: "rgba(74, 222, 128, 0.6)",
-    },
-    info: {
-      bg: "rgba(30, 41, 59, 0.7)",
-      text: "#e2e8f0dd",
-      border: "rgba(100, 116, 139, 0.6)",
-    },
-  };
-  const theme = styles[type] || styles.info;
-
-  let toast = document.getElementById("game-notice-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "game-notice-toast";
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-weight: bold;
-      font-size: 0.95rem;
-      backdrop-filter: blur(3px);
-      -webkit-backdrop-filter: blur(3px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-      z-index: 100000;
-      pointer-events: none;
-      transition: opacity 0.2s ease, transform 0.12s ease;
-    `;
-    document.body.appendChild(toast);
-  }
-
-  if (isSameActiveToast) {
-    toast.style.transform = "translateX(-50%) scale(1.04)";
-    setTimeout(() => {
-      toast.style.transform = "translateX(-50%) scale(1)";
-    }, 120);
-  } else {
-    toast.style.background = theme.bg;
-    toast.style.color = theme.text;
-    toast.style.border = `1px solid ${theme.border}`;
-    toast.textContent = message;
-    activeToastMessage = message;
-  }
-
-  toast.style.opacity = "1";
-
-  clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    toast.style.opacity = "0";
-    toastTimeout = null;
-    activeToastMessage = "";
-  }, duration);
-}
-
-function showGameModal({
-  title = "Notice",
-  message = "",
-  type = "info", // "danger" | "warning" | "info"
-  confirmText = "OK",
-  cancelText = null, // Leave null for an alert-style popup; pass "Cancel" for confirm-style
-  closeOnBackdrop = true,
-  inputValue = null, // Pass a string (e.g. "" or JSON) to enable text intake
-  inputPlaceholder = "",
-  showCopy = false,
-  extraButtons = [],
-} = {}) {
-  return new Promise((resolve) => {
-    document.getElementById("custom-game-modal-overlay")?.remove();
-
-    const hasInput = inputValue !== null;
-    const accentColors = {
-      danger: "#ef4444",
-      warning: "#f59e0b",
-      info: "#3b82f6",
-    };
-    const accent = accentColors[type] || accentColors.info;
-
-    const overlay = document.createElement("div");
-    overlay.id = "custom-game-modal-overlay";
-    overlay.className = "unit-popup-overlay";
-    overlay.style.zIndex = "100001";
-
-    const modal = document.createElement("div");
-    modal.className = "unit-popup";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.style.maxWidth = hasInput ? "460px" : "420px";
-    modal.style.width = "90%";
-    modal.style.borderTop = `4px solid ${accent}`;
-
-    const header = document.createElement("div");
-    header.className = "unit-popup-header";
-
-    const heading = document.createElement("h2");
-    heading.textContent = title;
-    heading.style.margin = "0";
-    heading.style.color = type === "danger" ? "#fca5a5" : "";
-
-    header.appendChild(heading);
-
-    const body = document.createElement("p");
-    body.textContent = message;
-    body.style.margin = hasInput ? "14px 0 10px 0" : "14px 0 20px 0";
-    body.style.lineHeight = "1.5";
-    body.style.whiteSpace = "pre-line";
-
-    let textarea = null;
-    if (hasInput) {
-      textarea = document.createElement("textarea");
-      textarea.value = String(inputValue);
-      textarea.placeholder = inputPlaceholder;
-      textarea.rows = 4;
-      textarea.spellcheck = false;
-      textarea.style.cssText = `
-        width: 100%;
-        box-sizing: border-box;
-        margin-bottom: 18px;
-        padding: 10px;
-        border-radius: 6px;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(15, 23, 42, 0.65);
-        color: inherit;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 0.8rem;
-        line-height: 1.4;
-        resize: vertical;
-      `;
-    }
-
-    const footer = document.createElement("div");
-    footer.style.display = "flex";
-    footer.style.justifyContent = "flex-end";
-    footer.style.alignItems = "center";
-    footer.style.gap = "10px";
-
-    const cleanup = (confirmed) => {
-      document.removeEventListener("keydown", keyHandler);
-      const result = hasInput
-        ? confirmed
-          ? (textarea?.value ?? "")
-          : null
-        : Boolean(confirmed);
-      overlay.remove();
-      resolve(result);
-    };
-
-    const keyHandler = (e) => {
-      if (e.key === "Escape") cleanup(false);
-      if (e.key === "Enter" && (!hasInput || e.ctrlKey || e.metaKey)) {
-        cleanup(true);
-      }
-    };
-    document.addEventListener("keydown", keyHandler);
-
-    if (hasInput && showCopy) {
-      const copyBtn = document.createElement("button");
-      copyBtn.type = "button";
-      copyBtn.textContent = "Copy";
-      copyBtn.style.padding = "8px 14px";
-      copyBtn.style.cursor = "pointer";
-      copyBtn.style.marginRight = "auto";
-      copyBtn.addEventListener("click", async () => {
-        if (!textarea) return;
-        try {
-          await navigator.clipboard.writeText(textarea.value);
-        } catch {
-          textarea.select();
-          document.execCommand("copy");
-        }
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => {
-          copyBtn.textContent = "Copy";
-        }, 1200);
-      });
-      footer.appendChild(copyBtn);
-    }
-
-    for (const btnCfg of extraButtons) {
-      const extraBtn = document.createElement("button");
-      extraBtn.type = "button";
-      extraBtn.textContent = btnCfg.text;
-      extraBtn.style.padding = "8px 14px";
-      extraBtn.style.cursor = "pointer";
-      if (!showCopy && extraBtn === footer.firstChild) {
-        extraBtn.style.marginRight = "auto";
-      }
-      extraBtn.addEventListener("click", () =>
-        btnCfg.onClick?.({ textarea, close: cleanup }),
-      );
-      footer.appendChild(extraBtn);
-    }
-
-    if (cancelText) {
-      const cancelBtn = document.createElement("button");
-      cancelBtn.type = "button";
-      cancelBtn.textContent = cancelText;
-      cancelBtn.style.padding = "8px 16px";
-      cancelBtn.style.cursor = "pointer";
-      cancelBtn.addEventListener("click", () => cleanup(false));
-      footer.appendChild(cancelBtn);
-    }
-
-    const confirmBtn = document.createElement("button");
-    confirmBtn.type = "button";
-    confirmBtn.textContent = confirmText;
-    confirmBtn.style.padding = "8px 18px";
-    confirmBtn.style.fontWeight = "bold";
-    confirmBtn.style.cursor = "pointer";
-    confirmBtn.style.background = accent;
-    confirmBtn.style.color = "#fff";
-    confirmBtn.style.border = "none";
-    confirmBtn.style.borderRadius = "6px";
-    confirmBtn.addEventListener("click", () => cleanup(true));
-    footer.appendChild(confirmBtn);
-
-    if (closeOnBackdrop) {
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) cleanup(false);
-      });
-    }
-
-    if (textarea) {
-      modal.append(header, body, textarea, footer);
-    } else {
-      modal.append(header, body, footer);
-    }
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-
-    if (textarea) {
-      textarea.focus();
-      if (textarea.value) textarea.select();
-    } else {
-      confirmBtn.focus();
-    }
-  });
-}
-
-function syncOptionCheckboxes() {
-  const optionMap = [
-    { id: "toggle-clear-popup-checkbox", val: showClearPopup },
-    { id: "toggle-backline-cooldown-checkbox", val: showBacklineCooldown },
-    { id: "toggle-frontline-cooldown-checkbox", val: showFrontlineCooldown },
-    { id: "toggle-swap-layout-checkbox", val: swapDeploymentLayout },
-    { id: "toggle-simplified-log-checkbox", val: simplifyBattleLog },
-    { id: "toggle-hide-maxed-tech-checkbox", val: hideMaxedTech },
-    { id: "toggle-unpin-topbar-checkbox", val: unpinTopBar },
-    { id: "toggle-liquid-glass-checkbox", val: liquidGlassMode },
-    { id: "toggle-show-more-stats-checkbox", val: showMoreStats },
-    { id: "toggle-show-tech-bonus-checkbox", val: showTechBonus },
-    { id: "toggle-show-effective-damage-checkbox", val: showEffectiveDamage },
-  ];
-
-  for (const { id, val } of optionMap) {
-    const checkbox = document.getElementById(id);
-    if (checkbox) {
-      checkbox.checked = Boolean(val);
-    }
-  }
-
-  document
-    .querySelectorAll("#build-anim-segmented .segmented-btn")
-    .forEach((btn) => {
-      btn.classList.toggle(
-        "active",
-        btn.dataset.buildAnim === buildAnimationMode,
-      );
-    });
-}
-
-function getStageEnergyRegenMultiplier(
-  currentStageId,
-  targetMaxStageNumber = 60,
-) {
-  const currentStage = stages.find((s) => s.id === currentStageId);
-  if (!currentStage) return 1.0;
-
-  const stageNumber = currentStage.index + 1; // Stage 1-1 = 1, Stage 6-10 = 60
-  const ratio = Math.min(1.0, stageNumber / targetMaxStageNumber);
-
-  return Number(ratio.toFixed(2));
-}
-
-function processInventoryStaminaRegenOnStageClear(stageId) {
-  const regenMultiplier = getStageEnergyRegenMultiplier(stageId);
-  const totalDeployed = getDeployedCount() + getDeployedBaseCount();
-  const baseCapacity = 5;
-  const deploymentMultiplier = Math.min(1.0, totalDeployed / baseCapacity);
-
-  const regenAmount = Number(
-    (energyRegen * regenMultiplier * deploymentMultiplier).toFixed(2),
-  );
-
-  for (const unit of inventory) {
-    if (unit.energy < (unit.maxEnergy || 100)) {
-      unit.energy = Math.min(
-        unit.maxEnergy || 100,
-        Number((unit.energy + regenAmount).toFixed(2)),
-      );
-    }
-  }
-}
-
-function processTowerStaminaOnWaveClear() {
-  const deployed = [...deployedUnits, ...deployedBaseUnits].filter(
-    (u) => u !== null,
-  );
-
-  for (const unit of deployed) {
-    unit.energy = Math.max(0, Number((unit.energy - 0.1).toFixed(2)));
-    if (unit.energy <= 0) {
-      showToast(
-        `⚠️ ${getUnitName(unit)} is FATIGUED! (70% Damage & 90% Reward Penalty).`,
-        "warning",
-        2500,
-      );
-    }
-  }
-}
-
-function formatGameNumber(num) {
-  if (!Number.isFinite(num)) return "0";
-  const rounded = Math.round(num);
-  if (Math.abs(rounded) >= 1e9) {
-    return (rounded / 1e9).toFixed(2) + "B";
-  }
-  if (Math.abs(rounded) >= 1e6) {
-    return (rounded / 1e6).toFixed(2) + "M";
-  }
-  if (Math.abs(rounded) >= 1e3) {
-    return (rounded / 1e3).toFixed(1) + "K";
-  }
-  return rounded.toLocaleString();
-}
-
-function formatCombatNumber(num) {
-  if (!Number.isFinite(num)) return "0";
-  const rounded = Math.round(num);
-  const abs = Math.abs(rounded);
-
-  // Exact integer up to 9,999 (keeps Armor & early/mid HP 100% accurate)
-  if (abs < 1e4) {
-    return rounded.toLocaleString();
-  }
-
-  const tiers = [
-    { value: 1e12, suffix: "T" },
-    { value: 1e9, suffix: "B" },
-    { value: 1e6, suffix: "M" },
-    { value: 1e3, suffix: "K" },
-  ];
-
-  for (const { value, suffix } of tiers) {
-    if (abs >= value) {
-      const scaled = rounded / value;
-      const absScaled = Math.abs(scaled);
-      // Always 4 significant digits -> max 6 characters (e.g. 2.145M, 24.58M, 245.8M)
-      const decimals = absScaled >= 100 ? 1 : absScaled >= 10 ? 2 : 3;
-      return scaled.toFixed(decimals) + suffix;
-    }
-  }
-
-  return rounded.toLocaleString();
-}
-
-function accumulateSessionTowerStats(towerStatsList) {
-  if (!autoRepeatSessionStats.towerStatsMap) {
-    autoRepeatSessionStats.towerStatsMap = {};
-  }
-  for (const t of towerStatsList) {
-    const key = `${t.name}_${t.category}`;
-    if (!autoRepeatSessionStats.towerStatsMap[key]) {
-      autoRepeatSessionStats.towerStatsMap[key] = {
-        name: t.name,
-        category: t.category,
-        level: t.level,
-        xpGained: 0,
-        damageDealt: 0,
-        kills: 0,
-      };
-    }
-    autoRepeatSessionStats.towerStatsMap[key].level = t.level; // Keep highest level reached
-    autoRepeatSessionStats.towerStatsMap[key].xpGained += t.xpGained || 0;
-    autoRepeatSessionStats.towerStatsMap[key].damageDealt += t.damageDealt || 0;
-    autoRepeatSessionStats.towerStatsMap[key].kills += t.kills || 0;
-  }
-}
-
-function getSelectedStage() {
-  if (currentCampaignTabMode === "challenge") {
-    return (
-      challengeStages.find((s) => s.id === selectedChallengeStageId) ??
-      challengeStages[0]
-    );
-  }
-  return stages.find((s) => s.id === selectedStageId) ?? stages[0];
-}
-
-function cancelAutoRepeat() {
-  if (autoRepeatEnabled) {
-    autoRepeatEnabled = false;
-    autoStartWaveEnabled = false; // Disable Auto-Start Wave on cancel
-    autoRepeatRemaining = 0;
-    showToast("🛑 Auto-Repeat canceled by manual action.", "warning", 2500);
-
-    if (typeof renderStageSelect === "function") renderStageSelect();
-    if (typeof renderAutoWaveControl === "function") renderAutoWaveControl();
-  }
-}
-
-function getStageRewardMultiplier(stageId) {
-  const stage = stages.find((s) => s.id === stageId) || getSelectedStage();
-  const clears = stageClearCounts[stageId] || 0;
-
-  // Base decay steps across 4 clears down to a 15% floor (0.15)
-  const decayPerClear = (1.0 - 0.15) / MAX_CLEARS_FOR_REWARDS;
-  const baseDecay = Math.max(
-    0.15,
-    Number((1 - clears * decayPerClear).toFixed(3)),
-  );
-
-  // Clears 1 to 4 (clears 0-3): Apply +50% for Bosses, +25% for Minibosses
-  if (clears < MAX_CLEARS_FOR_REWARDS && stage) {
-    const isBoss = stage.isBoss || stage.stageInWorld === 10;
-    const isMiniboss = stage.stageInWorld === 5;
-    const bossBonus = isBoss ? 1.5 : isMiniboss ? 1.25 : 1.0;
-
-    return Number((baseDecay * bossBonus).toFixed(3));
-  }
-
-  // 4+ Clears (Overfarm Floor): Bonus expires, leaving all stages at the 0.15x base floor
-  return baseDecay;
-}
-
-function isBattleRunning() {
-  return battleLoop !== null || fastForward;
-}
-
-function getDeployedCount() {
-  return deployedUnits.filter((unit) => unit !== null).length;
-}
-
-function getDeployedBaseCount() {
-  return deployedBaseUnits.filter((unit) => unit !== null).length;
-}
-
-function getMaxDeployedUnits() {
-  const extra =
-    typeof getTechExtraMainSlots === "function"
-      ? getTechExtraMainSlots()
-      : typeof getTechExtraSlots === "function"
-        ? getTechExtraSlots()
-        : 0;
-  return maxDeployedUnits + extra;
-}
-
-function getLegendaryTowerCount() {
-  const allUnits = [
-    ...inventory,
-    ...deployedUnits.filter((u) => u !== null),
-    ...deployedBaseUnits.filter((u) => u !== null),
-  ];
-
-  return allUnits.filter((unit) => getUnitData(unit).rarity === "Legendary")
-    .length;
-}
-
-function getUnitData(unit) {
-  if (!unit || !unit.type || !unitTypes[unit.type]) {
-    return {
-      name: "Unknown Turret",
-      category: "Main",
-      rarity: "Common",
-      damage: 10,
-      fireRate: 5,
-      range: 3,
-    };
-  }
-  return unitTypes[unit.type];
-}
-
-function getUnitName(unit) {
-  return getUnitData(unit).name ?? "Unknown Turret";
-}
-
-function addLog(message, isMinor = false) {
-  if (simplifyBattleLog && isMinor) return;
-
-  const entry = document.createElement("div");
-  entry.className = "log-entry";
-  entry.textContent = message;
-
-  log.appendChild(entry);
-
-  while (log.children.length > MAX_LOG_ENTRIES) {
-    log.firstElementChild.remove();
-  }
-
-  log.scrollTop = log.scrollHeight;
-}
-
-function getSortedEnemies(list) {
-  const selectEl = document.getElementById("enemy-sort-select");
-  const sortMode = selectEl ? selectEl.value : currentEnemySortMode;
-
-  const sorted = [...list];
-
-  switch (sortMode) {
-    case "first":
-      return sorted.sort((a, b) => b.location - a.location);
-    case "last":
-      return sorted.sort((a, b) => a.location - b.location);
-    case "strongest":
-      return sorted.sort((a, b) => b.health - a.health);
-    case "weakest":
-      return sorted.sort((a, b) => a.health - b.health);
-    case "highest_armor":
-      return sorted.sort((a, b) => (b.armor || 0) - (a.armor || 0));
-    case "lowest_armor":
-      return sorted.sort((a, b) => (a.armor || 0) - (b.armor || 0));
-    case "default":
-    default:
-      return sorted;
-  }
-}
-
-function toggleUnitLock(unitId) {
-  const unit = inventory.find((u) => u.id === unitId);
-  if (!unit) return;
-
-  unit.isLocked = !unit.isLocked;
-  saveCampaignProgress();
-
-  addLog(
-    `${getUnitName(unit)} is now ${unit.isLocked ? "🔒 Locked" : "🔓 Unlocked"}.`,
-  );
-
-  // Refresh UI & Open Popup
-  renderInventory();
-  renderDeployment();
-  openUnitPopup(unit.id);
-}
-
-function getRearMaxCooldownTicks(unit) {
-  // If unit has an existing cooldownMax computed at battle setup, prefer it
-  if (unit.cooldownMax && !isBattleRunning()) {
-    return Math.round(unit.cooldownMax);
-  }
-
-  const baseFireRate = unit.fireRate || unitTypes[unit.type]?.fireRate || 1.0;
-
-  // 1. Tech Tree Bonus Multiplier
-  const techBonus =
-    typeof getTechMultiplier === "function"
-      ? getTechMultiplier("rear_cooldown")
-      : typeof getTechNodeLevel === "function"
-        ? 1 - getTechNodeLevel("rear_cooldown_speed") * 0.05
-        : 1.0;
-
-  // 2. Challenge / Relic Multipliers
-  const challengeBonus =
-    typeof getChallengeCooldownMultiplier === "function"
-      ? getChallengeCooldownMultiplier(unit.category || "Rear")
-      : 1.0;
-
-  // Compute total recurring max CD in ticks (excludes temporary -45% first-shot reduction)
-  const baseTicks = 100 / Math.max(0.1, baseFireRate);
-  const effectiveTicks = baseTicks * techBonus * challengeBonus;
-
-  return Math.max(1, Math.round(effectiveTicks));
-}
-
-function getStageEnergyRegenMultiplier(currentStageId) {
-  const currentStage = stages.find((s) => s.id === currentStageId);
-  if (!currentStage) return 1.0;
-
-  // Highest unlocked stage index (e.g. 49 for 5-10 in 0-indexed array)
-  const maxUnlockedIndex = Math.max(1, unlockedStageIndex);
-  const currentStageIndex = currentStage.index;
-
-  // Ratio scales from (1 / maxUnlockedIndex) up to 1.0 (100%)
-  const ratio = (currentStageIndex + 1) / (maxUnlockedIndex + 1);
-  return Math.max(0.1, Number(ratio.toFixed(2))); // 10% floor safety valve
-}
-
-function getFatigueRewardMultiplier() {
-  const deployed = [...deployedUnits, ...deployedBaseUnits].filter(
-    (u) => u !== null,
-  );
-  const hasFatiguedUnit = deployed.some((u) => u.energy <= 0);
-
-  // If any unit is fatigued, apply 90% reward hit (0.1x gold/XP payout)
-  return hasFatiguedUnit ? 0.1 : 1.0;
-}
-
-function setShowEffectiveDamage(enabled) {
-  showEffectiveDamage = Boolean(enabled);
-  const cb = document.getElementById("toggle-show-effective-damage-checkbox");
-  if (cb && cb.checked !== showEffectiveDamage)
-    cb.checked = showEffectiveDamage;
-  saveCampaignProgress();
-}
-
-function setShowFrontlineCooldown(enabled) {
-  showFrontlineCooldown = Boolean(enabled);
-  const checkbox = document.getElementById(
-    "toggle-frontline-cooldown-checkbox",
-  );
-  if (checkbox && checkbox.checked !== showFrontlineCooldown) {
-    checkbox.checked = showFrontlineCooldown;
-  }
-  renderDeployment();
-  saveCampaignProgress();
-}
-
-function getCooldownDisplayText(unit, isRunning) {
-  const fr = unit.fireRate || 1;
-  const shotsPerTick = fr / 100;
-
-  // 1. Multi-shot per tick (FR > 100)
-  if (shotsPerTick > 1) {
-    const formattedShots = Number(shotsPerTick.toFixed(1));
-    return {
-      text: `CD: ${formattedShots} shots/tick`,
-      isReady: true,
-    };
-  }
-
-  // 2. Single-shot towers (FR <= 100)
-  const maxCd = unit.cooldownMax ?? 100 / Math.max(0.1, fr);
-
-  if (!isRunning) {
-    const ticks = Math.ceil(maxCd);
-    return {
-      text: `CD: ${ticks} tick${ticks > 1 ? "s" : ""}`,
-      isReady: false,
-    };
-  }
-
-  // Live battle: Math.max(1, ...) ensures 1 tick is the minimum display floor
-  const cdVal = Math.max(0, unit.cooldown ?? 0);
-  const ticksRemaining = Math.max(1, Math.ceil(cdVal));
-
-  return {
-    text: `CD: ${ticksRemaining} tick${ticksRemaining > 1 ? "s" : ""}`,
-    isReady: ticksRemaining === 1,
-  };
-}
-
-// Global helper for background-proof delays
-function startWorkerIntermission(durationMs, callback, tag = null) {
-  cancelWorkerIntermission();
-  activeIntermissionCallback = callback;
-  gameTicker.postMessage({
-    action: "startIntermission",
-    duration: durationMs,
-    tag,
-  });
-}
-
-function cancelWorkerIntermission() {
-  activeIntermissionCallback = null;
-  gameTicker.postMessage({ action: "stop" });
-}
-
-/* ==========================================================================
    5. TOWER STATS, EXPERIENCE, MERGING and BUILD
    ========================================================================== */
 
@@ -2270,45 +1156,46 @@ function consumeUnitForXp(targetId, consumedId) {
   };
 }
 
+function getMaxUnitLevel(unit) {
+  return unit.limitBroken ? 140 : 120;
+}
+
 function getLevelMultiplier(unit) {
   const lvl = unit.level;
-  // Linear scaling up to Lvl 25, then smooth compounding growth
+  // Smooth transition from linear early-game (+11%/lvl up to Lvl 25)
+  // into a slightly gentler compounding curve (+2.8%/lvl) so W10+ stays balanced
   if (lvl <= 25) {
-    return 1 + 0.1 * (lvl - 1); // Lvl 25 = 3.4x
+    return 1 + 0.11 * (lvl - 1); // Lvl 25 = 3.64x
   }
-  return 3.4 * Math.pow(1.03, lvl - 25); // Lvl 150 = ~114x
+  return 3.64 * Math.pow(1.028, lvl - 25); // Lvl 150 = ~115x
 }
 
 function getGrowthFactor(level, unitCategory) {
   const isRear = unitCategory === "Rear";
-  const lvl = Math.min(150, Math.max(1, level));
+  const lvl = Math.min(140, Math.max(1, level));
 
-  // Define growth factor targets at key milestone levels:
-  // Lvl 1–9:   High starting factor
-  // Lvl 10–29: First sharp drop
-  // Lvl 30–49: Second sharp drop
-  // Lvl 50+:   Final floor
   const milestones = isRear
     ? [
-        { lvl: 1, factor: 1.75 },
-        { lvl: 10, factor: 1.55 },
-        { lvl: 30, factor: 1.25 }, 
-        { lvl: 50, factor: 1.2 },
-        { lvl: 60, factor: 1.16 },
-        { lvl: 70, factor: 1.12 },
-        { lvl: 120, factor: 1.05 },
+        { lvl: 1, factor: 1.72 },
+        { lvl: 10, factor: 1.52 },
+        { lvl: 25, factor: 1.28 },
+        { lvl: 45, factor: 1.2 },
+        { lvl: 70, factor: 1.14 },
+        { lvl: 100, factor: 1.105 },
+        { lvl: 120, factor: 1.092 }, // Standard Level Cap (~2.7M XP)
+        { lvl: 140, factor: 1.087 }, // Limit Break Cap (~5.9M XP)
       ]
     : [
-        { lvl: 1, factor: 1.65 },
-        { lvl: 10, factor: 1.48 }, 
-        { lvl: 30, factor: 1.27 }, 
-        { lvl: 50, factor: 1.2 },
-        { lvl: 60, factor: 1.16 },
-        { lvl: 70, factor: 1.12 },
-        { lvl: 120, factor: 1.05 },
+        { lvl: 1, factor: 1.62 },
+        { lvl: 10, factor: 1.46 },
+        { lvl: 25, factor: 1.26 },
+        { lvl: 45, factor: 1.19 },
+        { lvl: 70, factor: 1.135 },
+        { lvl: 100, factor: 1.105 },
+        { lvl: 120, factor: 1.092 }, // Standard Level Cap (~1.8M XP)
+        { lvl: 140, factor: 1.087 }, // Limit Break Cap (~3.9M XP)
       ];
 
-  // Find the current milestone segment
   for (let i = 0; i < milestones.length - 1; i++) {
     const start = milestones[i];
     const end = milestones[i + 1];
@@ -2316,18 +1203,16 @@ function getGrowthFactor(level, unitCategory) {
     if (lvl >= start.lvl && lvl <= end.lvl) {
       if (start.factor === end.factor) return start.factor;
 
-      // Normalize progress within this exact segment (0.0 to 1.0)
       const progress = (lvl - start.lvl) / (end.lvl - start.lvl);
+      const smoothProgress = progress * progress * (3 - 2 * progress);
 
-      // Sharp transition curve (x^3 makes the drop happen rapidly near the boundary)
-      const sharpProgress = Math.pow(progress, 3);
-
-      const factor = start.factor - (start.factor - end.factor) * sharpProgress;
-      return Number(factor.toFixed(3));
+      const factor =
+        start.factor - (start.factor - end.factor) * smoothProgress;
+      return Number(factor.toFixed(4));
     }
   }
 
-  return isRear ? 1.25 : 1.2;
+  return 1.087;
 }
 
 function getRequiredXp(unitOrLevel, category = "Main", xpDiscountMult = 1.0) {
@@ -2348,38 +1233,72 @@ function getRequiredXp(unitOrLevel, category = "Main", xpDiscountMult = 1.0) {
     baseAmount * Math.pow(growthFactor, Math.max(0, level - 1)),
   );
 
-  // Apply tech tree / rarity discount (e.g., 0.90 for 10% discount)
   return Math.round(rawXp * xpDiscountMult);
 }
 
-function calculateWaveXp(enemyLevel, towerLevel) {
-  const baseWaveXp = 25 + enemyLevel * 5;
-  const levelDiff = enemyLevel - towerLevel;
+function calculateUnitWaveXp({
+  enemyLevel,
+  unitLevel,
+  deployedCount = 6,
+  damageShare = null, // null = assumes fair share (1 / deployedCount)
+  techMult = null,
+}) {
+  const effectiveTechMult =
+    techMult ??
+    (typeof getTechWaveExpMultiplier === "function"
+      ? getTechWaveExpMultiplier()
+      : 1);
+
+  const TOTAL_SLOTS = 6;
+  const count = Math.max(1, deployedCount);
+  const singleBaseWaveXp = 15 + enemyLevel * 5;
+  const unitBaseShare = (singleBaseWaveXp * TOTAL_SLOTS) / count;
+
+  const levelDiff = enemyLevel - unitLevel;
+  let mult = 1.0;
 
   if (levelDiff <= 0) {
-    const penaltyMult = Math.max(0.3, 1 + levelDiff * 0.02);
-    return Math.max(1, Math.round(baseWaveXp * penaltyMult));
-  }
-
-  let effectiveDiff;
-  if (levelDiff <= 30) {
-    // Normal logarithmic scaling up to +30 gap
-    effectiveDiff = 26 * Math.log(1 + levelDiff / 26);
+    mult = Math.max(0.1, 1 + levelDiff * 0.05);
   } else {
-    // Hard logarithmic taper past +30 (smoothly anchored at gap 30)
-    const baseAt30 = 26 * Math.log(1 + 30 / 26); // ~19.95
-    const slopeAt30 = 26 / 56; // ~0.464
-    const taperStrength = 3.0;
-
-    effectiveDiff =
-      baseAt30 +
-      taperStrength *
-        Math.log(1 + (slopeAt30 / taperStrength) * (levelDiff - 30));
+    let effectiveDiff;
+    if (levelDiff <= 30) {
+      effectiveDiff = 26 * Math.log(1 + levelDiff / 26);
+    } else {
+      const baseAt30 = 26 * Math.log(1 + 30 / 26);
+      const slopeAt30 = 26 / 56;
+      effectiveDiff =
+        baseAt30 + 3.0 * Math.log(1 + (slopeAt30 / 3.0) * (levelDiff - 30));
+    }
+    mult = Math.pow(1.21, effectiveDiff);
   }
 
-  const multiplier = Math.pow(1.21, effectiveDiff);
+  const rawBaseXp = Math.max(1, Math.round(unitBaseShare * mult));
 
-  return Math.max(1, Math.round(baseWaveXp * multiplier));
+  // Default to an equal fair share when simulating without wave damage numbers
+  const share = damageShare !== null ? damageShare : 1 / count;
+  const targetShare = (1 / count) * 0.9;
+  const CLIFF_THRESHOLD = 0.25;
+
+  const rawRatio = Math.min(1.0, share / targetShare);
+  let contributionRatio = 0;
+
+  if (rawRatio >= CLIFF_THRESHOLD) {
+    const progress = (rawRatio - CLIFF_THRESHOLD) / (1 - CLIFF_THRESHOLD);
+    contributionRatio = 0.5 + 0.5 * progress;
+  } else {
+    const cliffProgress = rawRatio / CLIFF_THRESHOLD;
+    contributionRatio = 0.5 * Math.pow(cliffProgress, 2);
+  }
+
+  const baseEarnedXp = Math.round(rawBaseXp * contributionRatio);
+  const damageBonusXp =
+    share > 0 ? Math.round(rawBaseXp * share * count * 0.5) : 0;
+
+  return {
+    baseEarnedXp,
+    damageBonusXp,
+    earnedXp: Math.round((baseEarnedXp + damageBonusXp) * effectiveTechMult),
+  };
 }
 
 function awardWaveXpToDeployedUnits(enemyLevel) {
@@ -2408,55 +1327,17 @@ function awardWaveXpToDeployedUnits(enemyLevel) {
   const CLIFF_THRESHOLD = 0.25; // 25% of target share cutoff
 
   for (const unit of deployed) {
-    const levelDiff = enemyLevel - unit.level;
-
-    // Calculate level difference multiplier
-    let mult = 1.0;
-    if (levelDiff <= 0) {
-      mult = Math.max(0.1, 1 + levelDiff * 0.05);
-    } else {
-      let effectiveDiff;
-      if (levelDiff <= 30) {
-        effectiveDiff = 26 * Math.log(1 + levelDiff / 26);
-      } else {
-        const baseAt30 = 26 * Math.log(1 + 30 / 26);
-        const slopeAt30 = 26 / 56;
-        effectiveDiff =
-          baseAt30 + 3.0 * Math.log(1 + (slopeAt30 / 3.0) * (levelDiff - 30));
-      }
-      mult = Math.pow(1.21, effectiveDiff);
-    }
-
-    const rawBaseXp = Math.max(1, Math.round(unitBaseShare * mult));
-
     const damageShare =
       totalWaveDamage > 0 ? (unit.waveDamage || 0) / totalWaveDamage : 0;
 
-    // Piecewise Contribution Scaling (Plateau & Cliff)
-    const rawRatio = Math.min(1.0, damageShare / targetShare);
-    let contributionRatio = 0;
+    const { damageBonusXp, earnedXp } = calculateUnitWaveXp({
+      enemyLevel,
+      unitLevel: unit.level,
+      deployedCount: deployed.length,
+      damageShare,
+      techMult,
+    });
 
-    if (rawRatio >= CLIFF_THRESHOLD) {
-      // Plateau (25% to 100% target share): Scales from 50% to 100% base XP
-      const progress = (rawRatio - CLIFF_THRESHOLD) / (1 - CLIFF_THRESHOLD);
-      contributionRatio = 0.5 + 0.5 * progress;
-    } else {
-      // Cliff (0% to 25% target share): Drops quadratically from 50% down to 0%
-      const cliffProgress = rawRatio / CLIFF_THRESHOLD;
-      contributionRatio = 0.5 * Math.pow(cliffProgress, 2);
-    }
-
-    const baseEarnedXp = Math.round(rawBaseXp * contributionRatio);
-
-    // Bonus XP for carrying damage
-    let damageBonusXp = 0;
-    if (totalWaveDamage > 0 && (unit.waveDamage || 0) > 0) {
-      damageBonusXp = Math.round(
-        rawBaseXp * damageShare * deployed.length * 0.5,
-      );
-    }
-
-    const earnedXp = Math.round((baseEarnedXp + damageBonusXp) * techMult);
     unit.xp = (unit.xp ?? 0) + earnedXp;
 
     unit.stageXpGained = (unit.stageXpGained || 0) + earnedXp;
@@ -3408,6 +2289,10 @@ function renderDeployment() {
 
     if (deployedUnits[i] === null) {
       slot.textContent = `Slot ${i + 1} — Empty`;
+      if (!stageEntered && !isBattleRunning()) {
+        slot.style.cursor = "pointer";
+        slot.title = "Click to quick-deploy a Main unit";
+      }
     } else {
       const unit = deployedUnits[i];
       const data = getUnitData(unit);
@@ -3484,6 +2369,10 @@ function renderDeployment() {
       const unit = deployedBaseUnits[i];
       if (unit === null) {
         slot.textContent = `Base Slot ${i + 1} — Empty`;
+        if (!stageEntered && !isBattleRunning()) {
+          slot.style.cursor = "pointer";
+          slot.title = "Click to quick-deploy a Rear/Base unit";
+        }
       } else {
         const data = getUnitData(unit);
 
@@ -4132,7 +3021,15 @@ function renderInventory() {
       card.prepend(overlay);
     }
 
-    card.addEventListener("click", () => openUnitPopup(unit.id));
+    card.addEventListener("click", () => {
+      if (typeof quickDeployTarget !== "undefined" && quickDeployTarget) {
+        if (!isDeployed) {
+          executeQuickDeploy(unit);
+        }
+        return;
+      }
+      openUnitPopup(unit.id);
+    });
     inventoryList.appendChild(card);
   }
 }
@@ -6144,11 +5041,6 @@ function handleWaveCleared() {
   const unlockedNewStage =
     stage.index === unlockedStageIndex && stage.index < stages.length - 1;
 
-  if (unlockedNewStage) {
-    unlockedStageIndex = stage.index + 1;
-    unlockedStageId = stages[unlockedStageIndex].id;
-  }
-
   enemyStatus.textContent = `Stage ${stage.id} cleared!`;
 
   const deployed = [...deployedUnits, ...deployedBaseUnits].filter(
@@ -6545,6 +5437,9 @@ function renderStageSelect() {
   }
 
   stageDetails.replaceChildren(detailsMain, buttonGroup);
+
+  if (typeof syncEnterStageButtonPlacement === "function")
+    syncEnterStageButtonPlacement();
 }
 
 function enterStage() {
@@ -7412,29 +6307,29 @@ loadMenuBtn?.addEventListener("click", (e) => {
 });
 
 importExportBtn?.addEventListener("click", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
 
-    const raw = await showGameModal({
-      title: "Global Save Import / Export",
-      message:
-        "Copy your global save code below to back up all slots, or paste a save code and click Import:",
-      type: "info",
-      inputValue: exportGlobalSaveData(),
-      inputPlaceholder: "Paste global save code here...",
-      showCopy: true,
-      confirmText: "Import",
-      cancelText: "Close",
-    });
-
-    if (raw === null) return;
-
-    try {
-      importGlobalSaveData(raw);
-    } catch {
-      showToast("Invalid global save code.", "error", 2500);
-    }
+  const raw = await showGameModal({
+    title: "Global Save Import / Export",
+    message:
+      "Copy your global save code below to back up all slots, or paste a save code and click Import:",
+    type: "info",
+    inputValue: exportGlobalSaveData(),
+    inputPlaceholder: "Paste global save code here...",
+    showCopy: true,
+    confirmText: "Import",
+    cancelText: "Close",
   });
+
+  if (raw === null) return;
+
+  try {
+    importGlobalSaveData(raw);
+  } catch {
+    showToast("Invalid global save code.", "error", 2500);
+  }
+});
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest(".slot-dropdown-container")) {
@@ -7504,58 +6399,15 @@ bgImportExportBtn?.addEventListener("click", async (e) => {
   showToast("Background image imported!", "success", 2500);
 });
 
-document
-  .getElementById("glass-io-btn")
-  ?.addEventListener("click", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const { customBg, ...exportSettings } = liquidGlassSettings;
-
-    const raw = await showGameModal({
-      title: "Liquid Glass Import / Export",
-      message:
-        "Copy your current settings code below, or paste a code and click Import:",
-      type: "info",
-      inputValue: JSON.stringify(exportSettings),
-      inputPlaceholder: "Paste Liquid Glass JSON settings here...",
-      showCopy: true,
-      confirmText: "Import",
-      cancelText: "Close",
-    });
-
-    if (raw === null) return;
-
-    try {
-      const parsed = JSON.parse(raw.trim());
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Invalid format");
-      }
-
-      const nextSettings = {
-        ...DEFAULT_LIQUID_GLASS_SETTINGS,
-        customBg: liquidGlassSettings.customBg,
-      };
-      for (const key of Object.keys(DEFAULT_LIQUID_GLASS_SETTINGS)) {
-        if (key === "customBg") continue;
-        if (key in parsed && Number.isFinite(Number(parsed[key]))) {
-          nextSettings[key] = Number(parsed[key]);
-        }
-      }
-
-      applyLiquidGlassMode(true, nextSettings);
-      saveCampaignProgress();
-      showToast("Liquid Glass settings imported!", "success", 2500);
-    } catch {
-      showToast("Invalid Liquid Glass settings code.", "error", 2500);
-    }
-  });
-
 // Inventory Toggle Listeners
 const inventoryPanel = document.querySelector(".inventory-panel");
 if (toggleInventoryButton && inventoryPanel) {
   toggleInventoryButton.textContent = "→";
   toggleInventoryButton.addEventListener("click", () => {
+    if (typeof quickDeployTarget !== "undefined" && quickDeployTarget) {
+      closeQuickDeployView();
+      return;
+    }
     const isExpanded = inventoryPanel.classList.toggle("expanded");
     document.body.classList.toggle("no-scroll", isExpanded);
     toggleInventoryButton.textContent = isExpanded ? "Collapse" : "→";
@@ -7608,6 +6460,8 @@ inventoryTitleBtn?.addEventListener("click", () => {
 });
 
 inventoryFilterButton?.addEventListener("click", () => {
+  if (typeof quickDeployTarget !== "undefined" && quickDeployTarget) return;
+
   if (inventoryFilter === "all") inventoryFilter = "Main";
   else if (inventoryFilter === "Main") inventoryFilter = "Rear";
   else inventoryFilter = "all";
@@ -7616,7 +6470,6 @@ inventoryFilterButton?.addEventListener("click", () => {
   saveCampaignProgress();
   renderInventory();
 });
-
 inventorySortSelect?.addEventListener("change", (e) => {
   inventorySort = e.target.value;
   saveCampaignProgress();
@@ -7909,6 +6762,10 @@ function initializeGame() {
   renderInventory();
   renderDeployment();
   renderStageSelect();
+
+  if (typeof initBattleFocusControls === "function") {
+    initBattleFocusControls();
+  }
 
   if (typeof renderTechTree === "function") {
     renderTechTree();

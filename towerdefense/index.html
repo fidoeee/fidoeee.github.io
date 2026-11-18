@@ -11,6 +11,7 @@
     <script src="pool.js" defer></script>
     <script src="enemies.js" defer></script>
     <script src="techTree.js" defer></script>
+    <script src="helpers.js" defer></script>
     <script src="game.js" defer></script>
     <script src="battle.js" defer></script>
     <script src="devTools.js" defer></script>
@@ -549,6 +550,25 @@
       </div>
     </div>
 
+    <!-- Slot Quick-Deploy Modal -->
+    <div id="slot-deploy-overlay" class="popup-overlay hidden">
+      <div class="popup-card slot-deploy-card">
+        <div class="popup-header">
+          <h3 id="slot-deploy-title">Deploy to Main Slot 1</h3>
+          <button id="close-slot-deploy-btn" type="button">✕</button>
+        </div>
+        <div id="slot-deploy-list" class="slot-deploy-list"></div>
+        <div class="slot-deploy-footer">
+          <button id="recall-slot-deploy-btn" type="button" class="hidden">
+            Recall Current
+          </button>
+          <button id="confirm-slot-deploy-btn" type="button" disabled>
+            Confirm Deploy
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Non-Sticky Stats Bar -->
     <header class="stats-header">
       <div class="stats">
@@ -760,9 +780,39 @@
             <div id="tech-tree-content" class="tech-tree-content"></div>
           </section>
           <section class="panel battle-panel">
-            <h2>Battle — Tick <span id="tick-count">0</span></h2>
+            <div class="battle-header">
+              <h2>Battle — Tick <span id="tick-count">0</span></h2>
+              <div class="battle-header-actions">
+                <button
+                  id="toggle-battle-campaign-btn"
+                  class="battle-focus-only"
+                  type="button"
+                >
+                  🗺️ Campaign ▼
+                </button>
+                <button
+                  id="toggle-battle-deploy-btn"
+                  class="battle-focus-only"
+                  type="button"
+                >
+                  🛡️ Deploy ◀
+                </button>
+                <button
+                  id="toggle-battle-expand-btn"
+                  type="button"
+                  aria-label="Expand Battle"
+                >
+                  →
+                </button>
+              </div>
+            </div>
 
-            <div class="tab-buttons">
+            <!-- Full-Width Campaign Drawer (Only visible when toggled in Battle Focus) -->
+            <div id="battle-campaign-drawer" class="battle-campaign-drawer hidden">
+              <div id="battle-drawer-campaign-slot"></div>
+            </div>
+
+            <div class="tab-buttons battle-view-tabs">
               <button
                 id="battle-tab-button"
                 class="tab-button active"
@@ -791,50 +841,59 @@
               </button>
             </div>
 
-            <div id="battle-tab" class="tab-content">
-              <p id="enemy-status">
-                Choose a stage, then enter it to start the first wave.
-              </p>
+            <!-- Main Battle Body: Optional Left Mini-Deploy Sidebar + Battle Panes -->
+            <div class="battle-focus-workspace">
+              <aside id="battle-deploy-sidebar" class="battle-deploy-sidebar">
+                <div id="battle-drawer-deploy-slot"></div>
+              </aside>
 
-              <div class="battle-controls">
-                <button id="start-wave" type="button" disabled>
-                  Start Wave
-                </button>
-                <button id="skip-battle" type="button" disabled>Skip</button>
-                <select id="speed-select" class="speed-dropdown">
-                  <option value="slowest">Slowest</option>
-                  <option value="0.5">0.5x Speed</option>
-                  <option value="1" selected>1x Speed</option>
-                  <option value="2">2x Speed</option>
-                  <option value="4">4x Speed</option>
-                  <option value="8">8x Speed</option>
-                  <option value="16">16x Speed</option>
-                </select>
-              </div>
-            </div>
+              <div class="battle-panes-container">
+                <div id="battle-tab" class="tab-content">
+                  <p id="enemy-status">
+                    Choose a stage, then enter it to start the first wave.
+                  </p>
 
-            <div id="enemies-tab" class="tab-content" hidden>
-              <div class="enemies-tab-controls">
-                <label for="enemy-sort-select">Sort By: </label>
-                <select id="enemy-sort-select">
-                  <option value="default">Default</option>
-                  <option value="first">First</option>
-                  <option value="last">Last</option>
-                  <option value="strongest">Strongest</option>
-                  <option value="weakest">Weakest</option>
-                  <option value="highest_armor">Armor</option>
-                  <option value="lowest_armor">Light</option>
-                </select>
-              </div>
+                  <div class="battle-controls">
+                    <button id="start-wave" type="button" disabled>
+                      Start Wave
+                    </button>
+                    <button id="skip-battle" type="button" disabled>Skip</button>
+                    <select id="speed-select" class="speed-dropdown">
+                      <option value="slowest">Slowest</option>
+                      <option value="0.5">0.5x Speed</option>
+                      <option value="1" selected>1x Speed</option>
+                      <option value="2">2x Speed</option>
+                      <option value="4">4x Speed</option>
+                      <option value="8">8x Speed</option>
+                      <option value="16">16x Speed</option>
+                    </select>
+                  </div>
+                </div>
 
-              <div id="enemy-list" class="enemy-list">
-                <p class="empty-message">No active enemies.</p>
-              </div>
-            </div>
+                <div id="enemies-tab" class="tab-content" hidden>
+                  <div class="enemies-tab-controls">
+                    <label for="enemy-sort-select">Sort By: </label>
+                    <select id="enemy-sort-select">
+                      <option value="default">Default</option>
+                      <option value="first">First</option>
+                      <option value="last">Last</option>
+                      <option value="strongest">Strongest</option>
+                      <option value="weakest">Weakest</option>
+                      <option value="highest_armor">Armor</option>
+                      <option value="lowest_armor">Light</option>
+                    </select>
+                  </div>
 
-            <div id="stats-tab" class="tab-content" hidden>
-              <div id="stats-list" class="stats-list">
-                <p class="empty-message">No battle statistics yet.</p>
+                  <div id="enemy-list" class="enemy-list">
+                    <p class="empty-message">No active enemies.</p>
+                  </div>
+                </div>
+
+                <div id="stats-tab" class="tab-content" hidden>
+                  <div id="stats-list" class="stats-list">
+                    <p class="empty-message">No battle statistics yet.</p>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
